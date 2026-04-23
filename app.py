@@ -20,6 +20,11 @@ APP_ICON_ICO_FILE = APP_DIR / "assets" / "app-icon.ico"
 DEFAULT_TAG_COLOR = "#2563EB"
 DEFAULT_RESPONSIBLE_COLOR = "#0F766E"
 DEFAULT_SECTION_COLOR = "#B45309"
+PRIMARY_BUTTON_BG = "#2563EB"
+PRIMARY_BUTTON_HOVER = "#1D4ED8"
+SECONDARY_BUTTON_BG = "#DBEAFE"
+SECONDARY_BUTTON_HOVER = "#BFDBFE"
+SECONDARY_BUTTON_FG = "#1E3A8A"
 
 
 class NoteHTMLParser(HTMLParser):
@@ -282,14 +287,15 @@ class TaskManagerApp:
             header_actions,
             text="?",
             command=self.open_about_window,
-            font=("Segoe UI Semibold", 14),
+            font=("Segoe UI Semibold", 13),
             relief="flat",
             bg="#1f2937",
             fg="white",
             activebackground="#334155",
             activeforeground="white",
             bd=0,
-            padx=10,
+            width=2,
+            padx=8,
             pady=4,
             cursor="hand2",
         )
@@ -300,14 +306,15 @@ class TaskManagerApp:
             header_actions,
             text="⚙",
             command=self.open_settings_window,
-            font=("Segoe UI Symbol", 16),
+            font=("Segoe UI Symbol", 14),
             relief="flat",
             bg="#1f2937",
             fg="white",
             activebackground="#334155",
             activeforeground="white",
             bd=0,
-            padx=10,
+            width=2,
+            padx=8,
             pady=4,
             cursor="hand2",
         )
@@ -322,9 +329,9 @@ class TaskManagerApp:
             text="+ Tarefa",
             command=self.add_task,
             font=("Segoe UI Semibold", 10),
-            bg="#2563eb",
+            bg=PRIMARY_BUTTON_BG,
             fg="white",
-            activebackground="#1d4ed8",
+            activebackground=PRIMARY_BUTTON_HOVER,
             activeforeground="white",
             relief="flat",
             bd=0,
@@ -333,7 +340,7 @@ class TaskManagerApp:
             cursor="hand2",
         )
         add_button.pack(side="left")
-        self.bind_action_button_hover(add_button, "#2563eb", "#1d4ed8")
+        self.bind_action_button_hover(add_button, PRIMARY_BUTTON_BG, PRIMARY_BUTTON_HOVER)
 
         section_button = tk.Button(
             controls,
@@ -341,9 +348,9 @@ class TaskManagerApp:
             command=self.add_section,
             font=("Segoe UI Semibold", 10),
             relief="flat",
-            bg="#f59e0b",
+            bg=PRIMARY_BUTTON_BG,
             fg="white",
-            activebackground="#d97706",
+            activebackground=PRIMARY_BUTTON_HOVER,
             activeforeground="white",
             bd=0,
             padx=12,
@@ -351,7 +358,7 @@ class TaskManagerApp:
             cursor="hand2",
         )
         section_button.pack(side="left", padx=(10, 0))
-        self.bind_action_button_hover(section_button, "#f59e0b", "#d97706")
+        self.bind_action_button_hover(section_button, PRIMARY_BUTTON_BG, PRIMARY_BUTTON_HOVER)
 
         reload_button = tk.Button(
             controls,
@@ -359,9 +366,9 @@ class TaskManagerApp:
             command=self.reload_tasks_from_disk,
             font=("Segoe UI Semibold", 10),
             relief="flat",
-            bg="#0f766e",
+            bg=PRIMARY_BUTTON_BG,
             fg="white",
-            activebackground="#115e59",
+            activebackground=PRIMARY_BUTTON_HOVER,
             activeforeground="white",
             bd=0,
             padx=12,
@@ -369,7 +376,7 @@ class TaskManagerApp:
             cursor="hand2",
         )
         reload_button.pack(side="left", padx=(12, 0))
-        self.bind_action_button_hover(reload_button, "#0f766e", "#115e59")
+        self.bind_action_button_hover(reload_button, PRIMARY_BUTTON_BG, PRIMARY_BUTTON_HOVER)
 
         self.filter_menu = tk.OptionMenu(
             controls,
@@ -866,8 +873,9 @@ class TaskManagerApp:
             command=clear_date,
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=12,
             pady=8,
             cursor="hand2",
@@ -879,8 +887,9 @@ class TaskManagerApp:
             command=window.destroy,
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=12,
             pady=8,
             cursor="hand2",
@@ -892,9 +901,9 @@ class TaskManagerApp:
             command=apply_date,
             font=("Segoe UI Semibold", 10),
             relief="flat",
-            bg="#2563eb",
+            bg=PRIMARY_BUTTON_BG,
             fg="white",
-            activebackground="#1d4ed8",
+            activebackground=PRIMARY_BUTTON_HOVER,
             activeforeground="white",
             padx=12,
             pady=8,
@@ -965,8 +974,9 @@ class TaskManagerApp:
                 command=lambda name=tag_name: self.toggle_note_format(text_box, name),
                 font=("Segoe UI Semibold", 10),
                 relief="flat",
-                bg="#f8fafc",
-                activebackground="#e2e8f0",
+                bg=SECONDARY_BUTTON_BG,
+                fg=SECONDARY_BUTTON_FG,
+                activebackground=SECONDARY_BUTTON_HOVER,
                 padx=12,
                 pady=6,
                 cursor="hand2",
@@ -993,8 +1003,9 @@ class TaskManagerApp:
             command=lambda: self.clear_note_text(text_box),
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=12,
             pady=8,
             cursor="hand2",
@@ -1006,8 +1017,9 @@ class TaskManagerApp:
             command=window.destroy,
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=12,
             pady=8,
             cursor="hand2",
@@ -1019,9 +1031,9 @@ class TaskManagerApp:
             command=save_notes,
             font=("Segoe UI Semibold", 10),
             relief="flat",
-            bg="#2563eb",
+            bg=PRIMARY_BUTTON_BG,
             fg="white",
-            activebackground="#1d4ed8",
+            activebackground=PRIMARY_BUTTON_HOVER,
             activeforeground="white",
             padx=12,
             pady=8,
@@ -1374,8 +1386,9 @@ class TaskManagerApp:
             command=window.destroy,
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=14,
             pady=8,
             cursor="hand2",
@@ -1387,9 +1400,9 @@ class TaskManagerApp:
             command=submit,
             font=("Segoe UI Semibold", 10),
             relief="flat",
-            bg="#2563eb",
+            bg=PRIMARY_BUTTON_BG,
             fg="white",
-            activebackground="#1d4ed8",
+            activebackground=PRIMARY_BUTTON_HOVER,
             activeforeground="white",
             padx=16,
             pady=8,
@@ -1601,8 +1614,9 @@ class TaskManagerApp:
             command=lambda: self.open_tag_manager(on_close=render_tag_options),
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=12,
             pady=8,
             cursor="hand2",
@@ -1614,9 +1628,9 @@ class TaskManagerApp:
             command=lambda: self.save_task_tags(window, task_id, selected),
             font=("Segoe UI Semibold", 10),
             relief="flat",
-            bg="#2563eb",
+            bg=PRIMARY_BUTTON_BG,
             fg="white",
-            activebackground="#1d4ed8",
+            activebackground=PRIMARY_BUTTON_HOVER,
             activeforeground="white",
             padx=14,
             pady=8,
@@ -1629,8 +1643,9 @@ class TaskManagerApp:
             command=window.destroy,
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=14,
             pady=8,
             cursor="hand2",
@@ -1842,8 +1857,9 @@ class TaskManagerApp:
             command=lambda: self.choose_tasks_file(file_path_var),
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=12,
             pady=8,
             cursor="hand2",
@@ -1910,8 +1926,9 @@ class TaskManagerApp:
             command=lambda: self.choose_responsible_color(responsible_color_var, responsible_preview),
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=12,
             pady=8,
             cursor="hand2",
@@ -1926,9 +1943,9 @@ class TaskManagerApp:
             command=lambda: self.save_settings(window, file_path_var.get(), layout_var.get(), responsible_color_var.get()),
             font=("Segoe UI Semibold", 10),
             relief="flat",
-            bg="#2563eb",
+            bg=PRIMARY_BUTTON_BG,
             fg="white",
-            activebackground="#1d4ed8",
+            activebackground=PRIMARY_BUTTON_HOVER,
             activeforeground="white",
             padx=14,
             pady=9,
@@ -1941,8 +1958,9 @@ class TaskManagerApp:
             command=window.destroy,
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=14,
             pady=9,
             cursor="hand2",
@@ -2037,8 +2055,8 @@ class TaskManagerApp:
     def open_about_window(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Sobre")
-        window.geometry("420x180")
-        window.minsize(380, 170)
+        window.geometry("420x205")
+        window.minsize(380, 190)
         window.configure(bg="#eef3f8")
         window.transient(self.root)
         window.grab_set()
@@ -2069,12 +2087,13 @@ class TaskManagerApp:
             command=window.destroy,
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=14,
             pady=8,
             cursor="hand2",
-        ).pack(anchor="e", padx=16, pady=(0, 16))
+        ).pack(anchor="e", padx=16, pady=(0, 18))
 
     def open_tag_manager(self, on_close=None) -> None:
         window = tk.Toplevel(self.root)
@@ -2200,8 +2219,9 @@ class TaskManagerApp:
                     command=lambda name=item["name"]: self.update_tag_color(name, refresh_tags),
                     font=("Segoe UI", 9),
                     relief="flat",
-                    bg="#f8fafc",
-                    activebackground="#e2e8f0",
+                    bg=SECONDARY_BUTTON_BG,
+                    fg=SECONDARY_BUTTON_FG,
+                    activebackground=SECONDARY_BUTTON_HOVER,
                     padx=10,
                     pady=6,
                     cursor="hand2",
@@ -2213,8 +2233,9 @@ class TaskManagerApp:
                     command=lambda name=item["name"]: self.delete_tag(name, refresh_tags),
                     font=("Segoe UI", 9),
                     relief="flat",
-                    bg="#fef2f2",
-                    activebackground="#fee2e2",
+                    bg=SECONDARY_BUTTON_BG,
+                    fg=SECONDARY_BUTTON_FG,
+                    activebackground=SECONDARY_BUTTON_HOVER,
                     padx=10,
                     pady=6,
                     cursor="hand2",
@@ -2226,8 +2247,9 @@ class TaskManagerApp:
                     command=lambda name=item["name"]: self.rename_tag(name, refresh_tags),
                     font=("Segoe UI", 9),
                     relief="flat",
-                    bg="#f8fafc",
-                    activebackground="#e2e8f0",
+                    bg=SECONDARY_BUTTON_BG,
+                    fg=SECONDARY_BUTTON_FG,
+                    activebackground=SECONDARY_BUTTON_HOVER,
                     padx=10,
                     pady=6,
                     cursor="hand2",
@@ -2244,9 +2266,9 @@ class TaskManagerApp:
             command=lambda: self.create_tag(name_var, color_var, color_button, refresh_tags),
             font=("Segoe UI Semibold", 10),
             relief="flat",
-            bg="#2563eb",
+            bg=PRIMARY_BUTTON_BG,
             fg="white",
-            activebackground="#1d4ed8",
+            activebackground=PRIMARY_BUTTON_HOVER,
             activeforeground="white",
             padx=14,
             pady=8,
@@ -2259,8 +2281,9 @@ class TaskManagerApp:
             command=window.destroy if on_close is None else handle_close,
             font=("Segoe UI", 10),
             relief="flat",
-            bg="#f8fafc",
-            activebackground="#e2e8f0",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
             padx=14,
             pady=8,
             cursor="hand2",
@@ -2515,27 +2538,29 @@ class TaskManagerApp:
             (
                 "!",
                 lambda tid=task.id: self.toggle_task_important(tid),
-                "#FCA5A5" if task.important else "#f8fafc",
-                "#F87171" if task.important else "#e2e8f0",
+                "#BFDBFE" if task.important else SECONDARY_BUTTON_BG,
+                "#93C5FD" if task.important else SECONDARY_BUTTON_HOVER,
                 metrics["action_font"],
-                "#7F1D1D" if task.important else "#475569",
-                "white" if task.important else "#334155",
+                "#1E40AF" if task.important else SECONDARY_BUTTON_FG,
+                "#1E40AF" if task.important else SECONDARY_BUTTON_FG,
             ),
-            ("×", lambda tid=task.id: self.delete_task(tid), "#fef2f2", "#fee2e2", metrics["action_font"], "#7F1D1D", "#7F1D1D"),
+            ("×", lambda tid=task.id: self.delete_task(tid), SECONDARY_BUTTON_BG, SECONDARY_BUTTON_HOVER, metrics["action_font"], SECONDARY_BUTTON_FG, SECONDARY_BUTTON_FG),
         ]:
             tk.Button(
                 actions,
                 text=label,
                 command=command,
                 font=font_name,
-                relief="flat",
+                relief="sunken" if label == "!" and task.important else "flat",
                 bg=button_bg,
                 fg=fg_color,
                 activebackground=active_bg,
                 activeforeground=active_fg_color,
                 cursor="hand2",
+                width=2,
                 padx=metrics["action_padx"],
                 pady=metrics["action_pady"],
+                bd=1 if label == "!" and task.important else 0,
             ).pack(side="left", padx=metrics["action_pack_padx"])
 
         due_date_label = tk.Label(
