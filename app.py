@@ -1,6 +1,8 @@
 import json
 from dataclasses import dataclass, asdict, field
 from datetime import date
+from html import escape
+from html.parser import HTMLParser
 from pathlib import Path
 import tkinter as tk
 import tkinter.font as tkfont
@@ -17,6 +19,68 @@ APP_ICON_FILE = APP_DIR / "assets" / "app-icon.png"
 APP_ICON_ICO_FILE = APP_DIR / "assets" / "app-icon.ico"
 DEFAULT_TAG_COLOR = "#2563EB"
 DEFAULT_RESPONSIBLE_COLOR = "#0F766E"
+DEFAULT_SECTION_COLOR = "#B45309"
+
+
+class NoteHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.text_parts: list[str] = []
+        self.spans: list[dict[str, Any]] = []
+        self.active_counts = {tag: 0 for tag in ("bold", "italic", "underline")}
+        self.tag_map = {
+            "b": "bold",
+            "strong": "bold",
+            "i": "italic",
+            "em": "italic",
+            "u": "underline",
+        }
+
+    def current_offset(self) -> int:
+        return len("".join(self.text_parts))
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        mapped = self.tag_map.get(tag.lower())
+        if mapped:
+            self.active_counts[mapped] += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        mapped = self.tag_map.get(tag.lower())
+        if mapped and self.active_counts[mapped] > 0:
+            self.active_counts[mapped] -= 1
+
+    def handle_startendtag(self, tag: str, attrs) -> None:
+        if tag.lower() == "br":
+            self.handle_data("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not data:
+            return
+        start = self.current_offset()
+        self.text_parts.append(data)
+        end = self.current_offset()
+        for tag_name, count in self.active_counts.items():
+            if count > 0:
+                self.spans.append({"tag": tag_name, "start": start, "end": end})
+
+    def result(self) -> dict[str, Any] | None:
+        text = "".join(self.text_parts)
+        if not text.strip():
+            return None
+        return {"text": text, "spans": self.merge_spans(self.spans)}
+
+    def merge_spans(self, spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        for span in sorted(spans, key=lambda item: (str(item["tag"]), int(item["start"]), int(item["end"]))):
+            if not merged:
+                merged.append(dict(span))
+                continue
+            previous = merged[-1]
+            if previous["tag"] == span["tag"] and previous["end"] >= span["start"]:
+                previous["end"] = max(int(previous["end"]), int(span["end"]))
+                continue
+            merged.append(dict(span))
+        return merged
 
 
 class AppSettings:
@@ -80,6 +144,8 @@ class AppSettings:
 class Task:
     id: str
     title: str
+    item_type: str = "task"
+    section_color: str = DEFAULT_SECTION_COLOR
     completed: bool = False
     important: bool = False
     due_date: str = ""
@@ -117,12 +183,6 @@ class TaskManagerApp:
         self.drag_data = {"task_id": None, "active": False, "target_index": None}
         self.drop_indicator: tk.Frame | None = None
 
-        self.task_entry: tk.Entry | None = None
-        self.task_entry_placeholder = "Digite o texto da tarefa"
-        self.task_entry_placeholder_color = "#94A3B8"
-        self.task_entry_text_color = "#0F172A"
-        self.task_entry_placeholder_visible = False
-        self.title_var = tk.StringVar()
         self.tag_filter_var = tk.StringVar(value="Todas")
         self.storage_status_var = tk.StringVar(value=self.storage_status_text())
 
@@ -257,67 +317,62 @@ class TaskManagerApp:
         controls = tk.Frame(self.root, bg="#eef3f8", padx=24, pady=18)
         controls.pack(fill="x")
 
-        entry = tk.Entry(
+        add_button = tk.Button(
             controls,
-            textvariable=self.title_var,
-            font=("Segoe UI", 11),
-            relief="flat",
-            fg=self.task_entry_text_color,
-            highlightthickness=1,
-            highlightbackground="#cbd5e1",
-            highlightcolor="#2563eb",
-        )
-        entry.pack(side="left", fill="x", expand=True, ipady=9)
-        entry.bind("<Return>", lambda _event: self.add_task())
-        entry.bind("<FocusIn>", self.handle_task_entry_focus_in)
-        entry.bind("<FocusOut>", self.handle_task_entry_focus_out)
-        entry.bind("<KeyPress>", self.handle_task_entry_keypress)
-        self.task_entry = entry
-        self.show_task_entry_placeholder()
-
-        tk.Button(
-            controls,
-            text="+",
+            text="+ Tarefa",
             command=self.add_task,
-            font=("Segoe UI Semibold", 12),
+            font=("Segoe UI Semibold", 10),
             bg="#2563eb",
             fg="white",
             activebackground="#1d4ed8",
             activeforeground="white",
             relief="flat",
-            padx=16,
-            pady=7,
+            bd=0,
+            padx=12,
+            pady=8,
             cursor="hand2",
-        ).pack(side="left", padx=(12, 0))
+        )
+        add_button.pack(side="left")
+        self.bind_action_button_hover(add_button, "#2563eb", "#1d4ed8")
 
-        tk.Button(
+        section_button = tk.Button(
             controls,
-            text="↻",
+            text="+ Seção",
+            command=self.add_section,
+            font=("Segoe UI Semibold", 10),
+            relief="flat",
+            bg="#f59e0b",
+            fg="white",
+            activebackground="#d97706",
+            activeforeground="white",
+            bd=0,
+            padx=12,
+            pady=8,
+            cursor="hand2",
+        )
+        section_button.pack(side="left", padx=(10, 0))
+        self.bind_action_button_hover(section_button, "#f59e0b", "#d97706")
+
+        reload_button = tk.Button(
+            controls,
+            text="⟳ Recarregar",
             command=self.reload_tasks_from_disk,
-            font=("Segoe UI Symbol", 12),
+            font=("Segoe UI Semibold", 10),
             relief="flat",
             bg="#0f766e",
             fg="white",
             activebackground="#115e59",
             activeforeground="white",
-            padx=14,
-            pady=7,
+            bd=0,
+            padx=12,
+            pady=8,
             cursor="hand2",
-        ).pack(side="left", padx=(12, 0))
-
-        filter_bar = tk.Frame(self.root, bg="#eef3f8", padx=24)
-        filter_bar.pack(fill="x")
-
-        tk.Label(
-            filter_bar,
-            text="Filtrar por tag:",
-            font=("Segoe UI", 10),
-            bg="#eef3f8",
-            fg="#334155",
-        ).pack(side="left")
+        )
+        reload_button.pack(side="left", padx=(12, 0))
+        self.bind_action_button_hover(reload_button, "#0f766e", "#115e59")
 
         self.filter_menu = tk.OptionMenu(
-            filter_bar,
+            controls,
             self.tag_filter_var,
             "Todas",
             command=lambda _value: self.render_tasks(),
@@ -330,7 +385,15 @@ class TaskManagerApp:
             highlightbackground="#cbd5e1",
             activebackground="white",
         )
-        self.filter_menu.pack(side="left", padx=(10, 0))
+        self.filter_menu.pack(side="right", padx=(10, 0))
+
+        tk.Label(
+            controls,
+            text="Filtrar por tag:",
+            font=("Segoe UI", 10),
+            bg="#eef3f8",
+            fg="#334155",
+        ).pack(side="right")
         self.refresh_filter_options()
 
         container = tk.Frame(self.root, bg="#eef3f8", padx=24, pady=12)
@@ -355,36 +418,6 @@ class TaskManagerApp:
         self.canvas.bind("<Configure>", self.on_canvas_configure)
         self.canvas.bind_all("<MouseWheel>", self.on_mousewheel)
 
-    def show_task_entry_placeholder(self) -> None:
-        if not self.task_entry:
-            return
-        self.task_entry_placeholder_visible = True
-        self.title_var.set(self.task_entry_placeholder)
-        self.task_entry.configure(fg=self.task_entry_placeholder_color)
-
-    def hide_task_entry_placeholder(self) -> None:
-        if not self.task_entry_placeholder_visible:
-            return
-        self.task_entry_placeholder_visible = False
-        self.title_var.set("")
-        if self.task_entry:
-            self.task_entry.configure(fg=self.task_entry_text_color)
-
-    def handle_task_entry_focus_in(self, _event: tk.Event) -> None:
-        self.hide_task_entry_placeholder()
-
-    def handle_task_entry_focus_out(self, _event: tk.Event) -> None:
-        if self.title_var.get().strip():
-            return
-        self.show_task_entry_placeholder()
-
-    def handle_task_entry_keypress(self, event: tk.Event) -> None:
-        if not self.task_entry_placeholder_visible:
-            return
-        if event.keysym in {"Tab", "Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R"}:
-            return
-        self.hide_task_entry_placeholder()
-
     def bind_header_button_hover(self, button: tk.Button) -> None:
         def on_enter(_event) -> None:
             button.configure(
@@ -396,6 +429,22 @@ class TaskManagerApp:
             button.configure(
                 bg="#1f2937",
                 activebackground="#334155",
+            )
+
+        button.bind("<Enter>", on_enter)
+        button.bind("<Leave>", on_leave)
+
+    def bind_action_button_hover(self, button: tk.Button, base_bg: str, hover_bg: str) -> None:
+        def on_enter(_event) -> None:
+            button.configure(
+                bg=hover_bg,
+                activebackground=hover_bg,
+            )
+
+        def on_leave(_event) -> None:
+            button.configure(
+                bg=base_bg,
+                activebackground=hover_bg,
             )
 
         button.bind("<Enter>", on_enter)
@@ -577,6 +626,8 @@ class TaskManagerApp:
     def sync_tag_catalog_with_tasks(self) -> None:
         changed = False
         for task in self.tasks:
+            if self.is_section(task):
+                continue
             for tag in task.tags:
                 cleaned = self.clean_tag_name(tag)
                 if not cleaned:
@@ -592,6 +643,24 @@ class TaskManagerApp:
     def normalize_task_tags(self) -> None:
         changed = False
         for task in self.tasks:
+            if task.item_type not in {"task", "section"}:
+                task.item_type = "task"
+                changed = True
+            normalized_section_color = self.normalize_color(task.section_color)
+            if task.section_color != normalized_section_color:
+                task.section_color = normalized_section_color
+                changed = True
+            if self.is_section(task):
+                if task.tags or task.completed or task.important or task.due_date or task.notes.strip() or task.notes_rich or task.responsible:
+                    task.tags = []
+                    task.completed = False
+                    task.important = False
+                    task.due_date = ""
+                    task.notes = ""
+                    task.notes_rich = None
+                    task.responsible = ""
+                    changed = True
+                continue
             normalized: list[str] = []
             seen: set[str] = set()
             for tag in task.tags:
@@ -720,7 +789,7 @@ class TaskManagerApp:
 
     def open_due_date_dialog(self, task_id: str) -> None:
         task = self.find_task(task_id)
-        if not task:
+        if not task or self.is_section(task):
             return
 
         current_date = self.parse_due_date(task.due_date) or date.today()
@@ -737,7 +806,7 @@ class TaskManagerApp:
 
         tk.Label(
             window,
-            text="Data de previsao",
+            text="Data de previsão",
             font=("Segoe UI Semibold", 15),
             bg="#eef3f8",
             fg="#0f172a",
@@ -841,7 +910,7 @@ class TaskManagerApp:
 
     def open_notes_dialog(self, task_id: str) -> None:
         task = self.find_task(task_id)
-        if not task:
+        if not task or self.is_section(task):
             return
 
         window = tk.Toplevel(self.root)
@@ -981,7 +1050,7 @@ class TaskManagerApp:
         text_box.tag_configure("underline", font=underline_font)
 
     def load_task_notes_into_textbox(self, task: Task, text_box: tk.Text) -> None:
-        payload = task.notes_rich if self.is_valid_rich_note_payload(task.notes_rich) else None
+        payload = self.normalize_notes_rich_payload(task.notes_rich)
         if payload:
             note_text = str(payload.get("text", ""))
             text_box.insert("1.0", note_text)
@@ -1004,10 +1073,26 @@ class TaskManagerApp:
         if task.notes:
             text_box.insert("1.0", task.notes)
 
+    def normalize_notes_rich_payload(self, payload: Any) -> dict[str, Any] | None:
+        if self.is_valid_rich_note_payload(payload):
+            return payload
+        if isinstance(payload, str) and payload.strip():
+            return self.parse_note_html(payload)
+        return None
+
     def is_valid_rich_note_payload(self, payload: Any) -> bool:
         return isinstance(payload, dict) and isinstance(payload.get("text", ""), str) and isinstance(
             payload.get("spans", []), list
         )
+
+    def parse_note_html(self, html_text: str) -> dict[str, Any] | None:
+        parser = NoteHTMLParser()
+        try:
+            parser.feed(html_text)
+            parser.close()
+        except Exception:
+            return None
+        return parser.result()
 
     def toggle_note_format(self, text_box: tk.Text, tag_name: str) -> None:
         try:
@@ -1032,12 +1117,14 @@ class TaskManagerApp:
         for tag_name in self.note_tag_names():
             text_box.tag_remove(tag_name, "1.0", "end")
 
-    def serialize_note_text(self, text_box: tk.Text) -> dict[str, Any] | None:
+    def serialize_note_text(self, text_box: tk.Text) -> str | None:
         plain_text = text_box.get("1.0", "end-1c")
         if not plain_text.strip():
             return None
 
-        payload: dict[str, Any] = {"text": plain_text, "spans": []}
+        intervals: dict[str, list[tuple[int, int]]] = {tag_name: [] for tag_name in self.note_tag_names()}
+        boundaries = {0, len(plain_text)}
+
         for tag_name in self.note_tag_names():
             ranges = text_box.tag_ranges(tag_name)
             for index in range(0, len(ranges), 2):
@@ -1046,11 +1133,50 @@ class TaskManagerApp:
                 start_offset = self.text_index_to_offset(text_box, start_index)
                 end_offset = self.text_index_to_offset(text_box, end_index)
                 if end_offset > start_offset:
-                    payload["spans"].append(
-                        {"tag": tag_name, "start": start_offset, "end": end_offset}
-                    )
+                    intervals[tag_name].append((start_offset, end_offset))
+                    boundaries.add(start_offset)
+                    boundaries.add(end_offset)
 
-        return payload
+        tag_html = {"bold": "b", "italic": "i", "underline": "u"}
+        ordered_boundaries = sorted(boundaries)
+        html_parts: list[str] = []
+        open_tags: list[str] = []
+
+        for start_offset, end_offset in zip(ordered_boundaries, ordered_boundaries[1:]):
+            if end_offset <= start_offset:
+                continue
+            segment_text = plain_text[start_offset:end_offset]
+            if not segment_text:
+                continue
+
+            active_tags = [
+                tag_name
+                for tag_name in self.note_tag_names()
+                if any(start <= start_offset and end_offset <= end for start, end in intervals[tag_name])
+            ]
+
+            shared_prefix = 0
+            while (
+                shared_prefix < len(open_tags)
+                and shared_prefix < len(active_tags)
+                and open_tags[shared_prefix] == active_tags[shared_prefix]
+            ):
+                shared_prefix += 1
+
+            for tag_name in reversed(open_tags[shared_prefix:]):
+                html_parts.append(f"</{tag_html[tag_name]}>")
+            open_tags = open_tags[:shared_prefix]
+
+            for tag_name in active_tags[shared_prefix:]:
+                html_parts.append(f"<{tag_html[tag_name]}>")
+                open_tags.append(tag_name)
+
+            html_parts.append(escape(segment_text))
+
+        for tag_name in reversed(open_tags):
+            html_parts.append(f"</{tag_html[tag_name]}>")
+
+        return "".join(html_parts)
 
     def text_index_to_offset(self, text_box: tk.Text, text_index: str) -> int:
         return len(text_box.get("1.0", text_index))
@@ -1074,8 +1200,8 @@ class TaskManagerApp:
         if not self.tasks_file.exists():
             sample = [
                 Task(id=str(uuid4()), title="Planejar a semana", tags=["rotina", "prioridade"]),
-                Task(id=str(uuid4()), title="Revisar contas do mes", tags=["financeiro"]),
-                Task(id=str(uuid4()), title="Preparar reuniao de sexta", tags=["trabalho"]),
+                Task(id=str(uuid4()), title="Revisar contas do mês", tags=["financeiro"]),
+                Task(id=str(uuid4()), title="Preparar reunião de sexta", tags=["trabalho"]),
             ]
             self.save_tasks(sample)
             return sample
@@ -1093,8 +1219,8 @@ class TaskManagerApp:
             raise TypeError
         except (json.JSONDecodeError, TypeError):
             messagebox.showwarning(
-                "Arquivo invalido",
-                "Nao foi possivel carregar tasks.json. Um novo arquivo sera criado.",
+                "Arquivo inválido",
+                "Não foi possível carregar tasks.json. Um novo arquivo será criado.",
             )
             self.save_tasks([])
             return []
@@ -1136,38 +1262,175 @@ class TaskManagerApp:
     def collect_tags(self) -> set[str]:
         tags: set[str] = {item["name"] for item in self.tag_catalog.values()}
         for task in self.tasks:
+            if self.is_section(task):
+                continue
             tags.update(tag for tag in task.tags if tag.strip())
         return tags
+
+    def is_section(self, task: Task | None) -> bool:
+        return bool(task and task.item_type == "section")
+
+    def section_color(self, task: Task | None) -> str:
+        if not task:
+            return DEFAULT_SECTION_COLOR
+        return self.normalize_color(task.section_color)
+
+    def task_row_colors(self, task: Task | None) -> tuple[str, str]:
+        if self.is_section(task):
+            return "#eef3f8", "#eef3f8"
+        if task and task.important:
+            return "#FEE2E2", "#F87171"
+        return "white", "#dbe3ec"
 
     def filtered_tasks(self) -> list[Task]:
         selected = self.tag_filter_var.get()
         if selected == "Todas":
             return self.tasks
-        return [task for task in self.tasks if selected in task.tags]
+
+        visible: list[Task] = []
+        current_section: Task | None = None
+        section_added = False
+
+        for task in self.tasks:
+            if self.is_section(task):
+                current_section = task
+                section_added = False
+                continue
+
+            if selected not in task.tags:
+                continue
+
+            if current_section and not section_added:
+                visible.append(current_section)
+                section_added = True
+            visible.append(task)
+
+        return visible
+
+    def prompt_item_title(self, item_label: str, dialog_title: str) -> str | None:
+        result: dict[str, str | None] = {"value": None}
+
+        window = tk.Toplevel(self.root)
+        window.title(dialog_title)
+        window.geometry("460x270")
+        window.resizable(False, False)
+        window.configure(bg="#eef3f8")
+        window.transient(self.root)
+        window.grab_set()
+        self.center_window(window)
+
+        content = tk.Frame(
+            window,
+            bg="white",
+            highlightthickness=1,
+            highlightbackground="#dbe3ec",
+        )
+        content.pack(fill="both", expand=True, padx=20, pady=20)
+
+        footer = tk.Frame(content, bg="white")
+        footer.pack(side="bottom", fill="x", padx=22, pady=(0, 20))
+
+        tk.Label(
+            content,
+            text=dialog_title,
+            font=("Segoe UI Semibold", 16),
+            bg="white",
+            fg="#0f172a",
+        ).pack(anchor="w", padx=22, pady=(18, 6))
+
+        tk.Label(
+            content,
+            text=f"Digite o nome da {item_label} para adicionar a lista.",
+            font=("Segoe UI", 10),
+            bg="white",
+            fg="#475569",
+        ).pack(anchor="w", padx=22)
+
+        value_var = tk.StringVar()
+        entry = tk.Entry(
+            content,
+            textvariable=value_var,
+            font=("Segoe UI", 12),
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            highlightcolor="#2563eb",
+            fg="#0f172a",
+        )
+        entry.pack(fill="x", padx=22, pady=(18, 14), ipady=10)
+
+        def submit() -> None:
+            cleaned = value_var.get().strip()
+            if not cleaned:
+                messagebox.showinfo("Campo vazio", f"Digite um nome para criar a {item_label}.", parent=window)
+                entry.focus_set()
+                return
+            result["value"] = cleaned
+            window.destroy()
+
+        tk.Button(
+            footer,
+            text="Cancelar",
+            command=window.destroy,
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg="#f8fafc",
+            activebackground="#e2e8f0",
+            padx=14,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="right", padx=(10, 0))
+
+        tk.Button(
+            footer,
+            text="Salvar",
+            command=submit,
+            font=("Segoe UI Semibold", 10),
+            relief="flat",
+            bg="#2563eb",
+            fg="white",
+            activebackground="#1d4ed8",
+            activeforeground="white",
+            padx=16,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="right")
+
+        entry.bind("<Return>", lambda _event: submit())
+        entry.bind("<Escape>", lambda _event: window.destroy())
+        entry.focus_set()
+
+        window.wait_window()
+        if result["value"] is None:
+            return None
+
+        return result["value"]
 
     def add_task(self) -> None:
-        if self.task_entry_placeholder_visible:
-            title = ""
-        else:
-            title = self.title_var.get().strip()
-        if not title:
-            messagebox.showinfo("Campo vazio", "Digite um titulo para criar a tarefa.")
+        title = self.prompt_item_title("tarefa", "Nova tarefa")
+        if title is None:
             return
 
         self.tasks.append(Task(id=str(uuid4()), title=title))
-        self.title_var.set("")
-        self.show_task_entry_placeholder()
+        self.persist_and_refresh()
+
+    def add_section(self) -> None:
+        title = self.prompt_item_title("seção", "Nova seção")
+        if title is None:
+            return
+
+        self.tasks.append(Task(id=str(uuid4()), title=title, item_type="section"))
         self.persist_and_refresh()
 
     def toggle_task(self, task_id: str, completed: bool) -> None:
         task = self.find_task(task_id)
-        if task:
+        if task and not self.is_section(task):
             task.completed = completed
             self.persist_and_refresh()
 
     def toggle_task_important(self, task_id: str) -> None:
         task = self.find_task(task_id)
-        if not task:
+        if not task or self.is_section(task):
             return
 
         task.important = not task.important
@@ -1193,7 +1456,7 @@ class TaskManagerApp:
 
         cleaned = self.inline_file_title_var.get().strip()
         if not cleaned:
-            messagebox.showinfo("Titulo invalido", "O arquivo precisa ter um titulo.")
+            messagebox.showinfo("Título inválido", "O arquivo precisa ter um título.")
             return
 
         self.editing_file_title = False
@@ -1220,7 +1483,7 @@ class TaskManagerApp:
 
         cleaned = raw_value.strip()
         if not cleaned:
-            messagebox.showinfo("Titulo invalido", "A tarefa precisa ter um titulo.")
+            messagebox.showinfo("Título inválido", "A tarefa precisa ter um título.")
             return
 
         self.editing_task_id = None
@@ -1241,7 +1504,7 @@ class TaskManagerApp:
 
     def edit_task_tags(self, task_id: str) -> None:
         task = self.find_task(task_id)
-        if not task:
+        if not task or self.is_section(task):
             return
 
         if not self.tag_catalog:
@@ -1405,7 +1668,8 @@ class TaskManagerApp:
         if not task:
             return
 
-        if not messagebox.askyesno("Excluir tarefa", f"Deseja remover '{task.title}'?"):
+        item_label = "seção" if self.is_section(task) else "tarefa"
+        if not messagebox.askyesno(f"Excluir {item_label}", f"Deseja remover '{task.title}'?"):
             return
 
         self.tasks = [item for item in self.tasks if item.id != task_id]
@@ -1420,10 +1684,13 @@ class TaskManagerApp:
         copied_task = Task(
             id=str(uuid4()),
             title=f"{task.title} (copia)",
+            item_type=task.item_type,
+            section_color=task.section_color,
             completed=task.completed,
             important=task.important,
             due_date=task.due_date,
             notes=task.notes,
+            notes_rich=json.loads(json.dumps(task.notes_rich)) if task.notes_rich is not None else None,
             tags=list(task.tags),
             responsible=task.responsible,
         )
@@ -1433,12 +1700,12 @@ class TaskManagerApp:
 
     def set_task_responsible(self, task_id: str) -> None:
         task = self.find_task(task_id)
-        if not task:
+        if not task or self.is_section(task):
             return
 
         answer = simpledialog.askstring(
-            "Definir responsavel",
-            "Informe o responsavel da tarefa:",
+            "Definir responsável",
+            "Informe o responsável da tarefa:",
             initialvalue=task.responsible,
             parent=self.root,
         )
@@ -1446,6 +1713,22 @@ class TaskManagerApp:
             return
 
         task.responsible = answer.strip()
+        self.persist_and_refresh()
+
+    def set_section_color(self, task_id: str) -> None:
+        task = self.find_task(task_id)
+        if not task or not self.is_section(task):
+            return
+
+        chosen = colorchooser.askcolor(
+            color=self.section_color(task),
+            parent=self.root,
+            title="Escolher cor da seção",
+        )[1]
+        if not chosen:
+            return
+
+        task.section_color = self.normalize_color(chosen)
         self.persist_and_refresh()
 
     def show_task_context_menu(self, event, task_id: str) -> None:
@@ -1456,19 +1739,22 @@ class TaskManagerApp:
         menu = tk.Menu(self.root, tearoff=0)
         menu.configure(font=("Segoe UI", 10))
         menu.add_command(label="Editar", command=lambda tid=task_id: self.edit_task_title(tid))
-        menu.add_command(label="Alterar tags", command=lambda tid=task_id: self.edit_task_tags(tid))
-        menu.add_command(label="Definir data", command=lambda tid=task_id: self.open_due_date_dialog(tid))
-        menu.add_command(
-            label="Editar notas" if task.notes.strip() else "Adicionar notas",
-            command=lambda tid=task_id: self.open_notes_dialog(tid),
-        )
-        menu.add_command(label="Definir responsavel", command=lambda tid=task_id: self.set_task_responsible(tid))
-        menu.add_command(
-            label="Desmarcar como importante" if task.important else "Marcar como importante",
-            command=lambda tid=task_id: self.toggle_task_important(tid),
-        )
+        if not self.is_section(task):
+            menu.add_separator()
+            menu.add_command(
+                label="Desmarcar como importante" if task.important else "Marcar como importante",
+                command=lambda tid=task_id: self.toggle_task_important(tid),
+            )
+            menu.add_command(label="Alterar tags", command=lambda tid=task_id: self.edit_task_tags(tid))
+            menu.add_command(label="Definir responsável", command=lambda tid=task_id: self.set_task_responsible(tid))
+            menu.add_command(label="Definir data", command=lambda tid=task_id: self.open_due_date_dialog(tid))
+            menu.add_command(label="Adicionar notas", command=lambda tid=task_id: self.open_notes_dialog(tid))
+            menu.add_separator()
+        else:
+            menu.add_separator()
+            menu.add_command(label="Definir cor", command=lambda tid=task_id: self.set_section_color(tid))
+            menu.add_separator()
         menu.add_command(label="Duplicar", command=lambda tid=task_id: self.duplicate_task(tid))
-        menu.add_separator()
         menu.add_command(label="Excluir", command=lambda tid=task_id: self.delete_task(tid))
         menu.tk_popup(event.x_root, event.y_root)
         menu.grab_release()
@@ -1497,7 +1783,7 @@ class TaskManagerApp:
 
     def open_settings_window(self) -> None:
         window = tk.Toplevel(self.root)
-        window.title("Configuracoes")
+        window.title("Configurações")
         window.geometry("680x460")
         window.minsize(620, 430)
         window.configure(bg="#eef3f8")
@@ -1507,7 +1793,7 @@ class TaskManagerApp:
 
         tk.Label(
             window,
-            text="Configuracoes",
+            text="Configurações",
             font=("Segoe UI Semibold", 18),
             bg="#eef3f8",
             fg="#0f172a",
@@ -1515,7 +1801,7 @@ class TaskManagerApp:
 
         tk.Label(
             window,
-            text="Escolha o arquivo onde as tarefas serao armazenadas.",
+            text="Escolha o arquivo onde as tarefas serão armazenadas.",
             font=("Segoe UI", 10),
             bg="#eef3f8",
             fg="#475569",
@@ -1598,7 +1884,7 @@ class TaskManagerApp:
 
         tk.Label(
             panel,
-            text="Cor do responsavel",
+            text="Cor do responsável",
             font=("Segoe UI Semibold", 10),
             bg="white",
             fg="#0f172a",
@@ -1609,7 +1895,7 @@ class TaskManagerApp:
 
         responsible_preview = tk.Label(
             responsible_row,
-            text="Responsavel",
+            text="Responsável",
             font=("Segoe UI", 9),
             bg=responsible_color_var.get(),
             fg=self.contrast_text_color(responsible_color_var.get()),
@@ -1678,7 +1964,7 @@ class TaskManagerApp:
             file_path_var.set(selected)
 
     def choose_responsible_color(self, color_var: tk.StringVar, preview: tk.Label) -> None:
-        chosen = colorchooser.askcolor(color=color_var.get(), parent=self.root, title="Escolher cor do responsavel")[1]
+        chosen = colorchooser.askcolor(color=color_var.get(), parent=self.root, title="Escolher cor do responsável")[1]
         if not chosen:
             return
 
@@ -1692,7 +1978,7 @@ class TaskManagerApp:
     def save_settings(self, window: tk.Toplevel, file_path: str, layout_label: str, responsible_color: str) -> None:
         cleaned_path = file_path.strip()
         if not cleaned_path:
-            messagebox.showerror("Configuracoes", "Escolha um arquivo valido.")
+            messagebox.showerror("Configurações", "Escolha um arquivo válido.")
             return
 
         new_file = Path(cleaned_path).expanduser()
@@ -1700,7 +1986,7 @@ class TaskManagerApp:
         cleaned_name = new_file.name
         invalid_chars = set('<>:"/\\|?*')
         if any(char in invalid_chars for char in cleaned_name):
-            messagebox.showerror("Configuracoes", "O nome do arquivo contem caracteres invalidos.")
+            messagebox.showerror("Configurações", "O nome do arquivo contém caracteres inválidos.")
             return
 
         if not cleaned_name.lower().endswith(".json"):
@@ -1709,13 +1995,13 @@ class TaskManagerApp:
         try:
             selected_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
-            messagebox.showerror("Configuracoes", "Nao foi possivel acessar a pasta selecionada.")
+            messagebox.showerror("Configurações", "Não foi possível acessar a pasta selecionada.")
             return
 
         if not new_file.exists():
             should_create = messagebox.askyesno(
                 "Criar novo arquivo",
-                "O arquivo selecionado nao existe. Deseja criar um novo arquivo de tarefas vazio?",
+                "O arquivo selecionado não existe. Deseja criar um novo arquivo de tarefas vazio?",
                 parent=window,
             )
             if not should_create:
@@ -1746,7 +2032,7 @@ class TaskManagerApp:
         self.refresh_filter_options()
         self.render_tasks()
         window.destroy()
-        messagebox.showinfo("Configuracoes", "Configuracoes atualizadas com sucesso.")
+        messagebox.showinfo("Configurações", "Configurações atualizadas com sucesso.")
 
     def open_about_window(self) -> None:
         window = tk.Toplevel(self.root)
@@ -2007,7 +2293,7 @@ class TaskManagerApp:
             return
 
         if cleaned.lower() in self.tag_catalog:
-            messagebox.showinfo("Tags", "Essa tag ja esta cadastrada.")
+            messagebox.showinfo("Tags", "Essa tag já está cadastrada.")
             return
 
         self.tag_catalog[cleaned.lower()] = {
@@ -2039,13 +2325,13 @@ class TaskManagerApp:
 
         cleaned = self.clean_tag_name(answer)
         if not cleaned:
-            messagebox.showinfo("Tags", "Digite um nome valido para a tag.")
+            messagebox.showinfo("Tags", "Digite um nome válido para a tag.")
             return
 
         current_key = current_name.lower()
         new_key = cleaned.lower()
         if new_key != current_key and new_key in self.tag_catalog:
-            messagebox.showinfo("Tags", "Ja existe outra tag com esse nome.")
+            messagebox.showinfo("Tags", "Já existe outra tag com esse nome.")
             return
 
         item = self.tag_catalog.pop(current_key, None)
@@ -2084,7 +2370,7 @@ class TaskManagerApp:
         if task_count:
             message = (
                 f"Deseja excluir a tag '{name}'? "
-                f"Ela sera removida de {task_count} tarefa(s)."
+                f"Ela será removida de {task_count} tarefa(s)."
             )
 
         if not messagebox.askyesno("Excluir tag", message, parent=self.root):
@@ -2123,6 +2409,10 @@ class TaskManagerApp:
             self.create_task_row(task)
 
     def create_task_row(self, task: Task) -> None:
+        if self.is_section(task):
+            self.create_section_row(task)
+            return
+
         metrics = self.task_layout_metrics()
         row_bg = "#FEE2E2" if task.important else "white"
         border_color = "#F87171" if task.important else "#dbe3ec"
@@ -2279,10 +2569,87 @@ class TaskManagerApp:
 
         self.bind_task_context_menu(row, task.id)
 
+    def create_section_row(self, task: Task) -> None:
+        metrics = self.task_layout_metrics()
+        section_color = self.section_color(task)
+        row = tk.Frame(
+            self.list_frame,
+            bg="#eef3f8",
+            highlightthickness=0,
+            padx=metrics["row_padx"],
+            pady=0,
+        )
+        row.pack(fill="x", pady=(8, max(1, int(metrics["row_pack_pady"]))))
+        self.task_rows[task.id] = row
+
+        grip = tk.Label(
+            row,
+            text="::",
+            font=metrics["grip_font"],
+            fg="#cbd5e1",
+            bg="#eef3f8",
+            cursor="fleur",
+            width=2,
+        )
+        grip.pack(side="left", padx=metrics["grip_padx"])
+        grip.bind("<ButtonPress-1>", lambda event, tid=task.id: self.start_drag(event, tid))
+
+        section_line = tk.Frame(row, bg="#eef3f8")
+        section_line.pack(side="left", fill="x", expand=True, pady=(8, 2))
+
+        lead_line = tk.Frame(section_line, bg=section_color, height=1, width=28)
+        lead_line.pack(side="left", padx=(0, 6), pady=(7, 0))
+        lead_line.pack_propagate(False)
+
+        if self.editing_task_id == task.id:
+            edit_var = tk.StringVar(value=task.title)
+            title_entry = tk.Entry(
+                section_line,
+                textvariable=edit_var,
+                font=("Segoe UI Semibold", 10),
+                relief="flat",
+                justify="left",
+                highlightthickness=1,
+                highlightbackground=section_color,
+                highlightcolor=section_color,
+            )
+            self.inline_title_var = edit_var
+            self.inline_title_entry = title_entry
+            title_entry.pack(side="left", ipadx=10, ipady=2, pady=(0, 0))
+            title_entry.bind(
+                "<Return>",
+                lambda _event, tid=task.id, var=edit_var: self.save_inline_task_title(tid, var.get()),
+            )
+            title_entry.bind("<Escape>", lambda _event: self.cancel_inline_task_title())
+            title_entry.bind(
+                "<FocusOut>",
+                lambda _event, tid=task.id, var=edit_var: self.save_inline_task_title(tid, var.get()),
+            )
+            title_entry.focus_set()
+            title_entry.select_range(0, "end")
+        else:
+            title_label = tk.Label(
+                section_line,
+                text=task.title.upper(),
+                font=("Segoe UI Semibold", 10),
+                fg=section_color,
+                bg="#eef3f8",
+                padx=2,
+                cursor="xterm",
+                anchor="s",
+            )
+            title_label.pack(side="left", pady=(6, 0))
+            title_label.bind("<Button-1>", lambda _event, tid=task.id: self.edit_task_title(tid))
+
+        line_right = tk.Frame(section_line, bg=section_color, height=1)
+        line_right.pack(side="left", fill="x", expand=True, padx=(8, 0), pady=(7, 0))
+
+        self.bind_task_context_menu(row, task.id)
+
     def start_drag(self, event, task_id: str) -> None:
         if self.tag_filter_var.get() != "Todas":
             messagebox.showinfo(
-                "Reordenacao desativada",
+                "Reordenação desativada",
                 "Limpe o filtro de tags para reorganizar a lista completa.",
             )
             return
@@ -2391,8 +2758,7 @@ class TaskManagerApp:
                 for child in row.winfo_children():
                     self.tint_widget_tree(child, "#eff6ff")
             else:
-                base_bg = "#FEE2E2" if self.find_task(tid) and self.find_task(tid).important else "white"
-                base_border = "#F87171" if self.find_task(tid) and self.find_task(tid).important else "#dbe3ec"
+                base_bg, base_border = self.task_row_colors(self.find_task(tid))
                 row.configure(bg=base_bg, highlightbackground=base_border)
                 for child in row.winfo_children():
                     self.tint_widget_tree(child, base_bg)
@@ -2402,8 +2768,7 @@ class TaskManagerApp:
         if not row or not row.winfo_exists():
             return
         task = self.find_task(task_id)
-        base_bg = "#FEE2E2" if task and task.important else "white"
-        base_border = "#F87171" if task and task.important else "#dbe3ec"
+        base_bg, base_border = self.task_row_colors(task)
         row.configure(bg=base_bg, highlightbackground=base_border)
         for child in row.winfo_children():
             self.tint_widget_tree(child, base_bg)
@@ -2411,7 +2776,7 @@ class TaskManagerApp:
     def tint_widget_tree(self, widget: tk.Widget, bg: str) -> None:
         try:
             current_bg = widget.cget("bg")
-            if current_bg in {"white", "#eff6ff", "#FEF2F2", "#FEE2E2"}:
+            if current_bg in {"white", "#eff6ff", "#FEF2F2", "#FEE2E2", "#eef3f8"}:
                 widget.configure(bg=bg)
             if widget.winfo_class() == "Checkbutton":
                 widget.configure(activebackground=bg)

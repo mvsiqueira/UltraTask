@@ -4,6 +4,8 @@
     {
       "id": "2c01be03-ff36-4694-bf86-fb0a1cd2f5af",
       "title": "fsdgsdhshaaa",
+      "item_type": "task",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "2026-04-20",
@@ -15,8 +17,23 @@
       ]
     },
     {
+      "id": "51b7b47e-0149-4a23-91e9-9b154eb4f40c",
+      "title": "teste",
+      "item_type": "section",
+      "section_color": "#804040",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "",
+      "tags": []
+    },
+    {
       "id": "14115265-f390-4d94-a868-a1ab585a60c1",
       "title": "teste (copia)",
+      "item_type": "task",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "",
@@ -30,6 +47,8 @@
     {
       "id": "d829c880-83a0-49d2-864e-179e8efc623d",
       "title": "teste",
+      "item_type": "task",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "",
@@ -41,8 +60,23 @@
       ]
     },
     {
+      "id": "6eb4e9c4-4494-4d4a-bc29-6b13a59705fa",
+      "title": "TESTE 2",
+      "item_type": "section",
+      "section_color": "#804040",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "",
+      "tags": []
+    },
+    {
       "id": "cf2a20b5-c6ae-4c4b-b492-75b03a7a63de",
       "title": "fsdgsdhshaaa (copia)",
+      "item_type": "task",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "",
@@ -56,31 +90,21 @@
     {
       "id": "28ee4eb4-5c74-482e-a553-9c73afafdcab",
       "title": "teste 2",
+      "item_type": "task",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "2026-04-23",
       "notes": "fsdfsdfsdfs\nddhfhdh\n\nfgdfdfgd\nssss",
-      "notes_rich": {
-        "text": "fsdfsdfsdfs\nddhfhdh\n\nfgdfdfgd\nssss",
-        "spans": [
-          {
-            "tag": "bold",
-            "start": 0,
-            "end": 11
-          },
-          {
-            "tag": "italic",
-            "start": 21,
-            "end": 29
-          }
-        ]
-      },
+      "notes_rich": "<b>fsdfsdfsdfs</b>\nddhfhdh\n\n<i>fgdfdfgd</i>\nssss",
       "responsible": "",
       "tags": []
     },
     {
       "id": "658da01c-3307-4d6c-b8ae-69e2d79ad8ae",
       "title": "verificar sessões",
+      "item_type": "task",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "",
@@ -94,6 +118,8 @@
     {
       "id": "4f86789d-77ef-4a77-ba6d-fc5649536a09",
       "title": "teste 2 (copia)",
+      "item_type": "task",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "",
@@ -105,6 +131,8 @@
     {
       "id": "aa6cc881-bc5a-49a8-845c-fc617ef3e657",
       "title": "verificar sessões (copia)",
+      "item_type": "task",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "",
@@ -118,6 +146,8 @@
     {
       "id": "083af9d9-a7f9-41f7-841d-e7e7431e2d13",
       "title": "dadada",
+      "item_type": "task",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "",
@@ -129,6 +159,8 @@
     {
       "id": "0fbd3a7c-db4c-4607-b456-7e6a4a31ae3f",
       "title": "dedede",
+      "item_type": "task",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "",
