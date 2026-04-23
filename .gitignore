@@ -1,0 +1,11 @@
+settings.json
+tasks.json
+__pycache__/
+.venv/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.idea/
+.vscode/
