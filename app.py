@@ -2472,11 +2472,6 @@ class TaskManagerApp:
         title_font.configure(overstrike=1 if task.completed else 0)
         title_color = "#94a3b8" if task.completed else "#0f172a"
 
-        if task.responsible:
-            responsible_pill = self.create_responsible_chip(title_line, task.responsible, metrics)
-            responsible_pill.pack(side="left", padx=metrics["tag_pack_padx"])
-            responsible_pill.bind("<Button-1>", lambda _event, tid=task.id: self.set_task_responsible(tid))
-
         if task.tags:
             for tag in task.tags:
                 color = self.get_tag_color(tag)
@@ -2492,6 +2487,11 @@ class TaskManagerApp:
                 )
                 pill.pack(side="left", padx=metrics["tag_pack_padx"])
                 pill.bind("<Button-1>", lambda _event, tid=task.id: self.edit_task_tags(tid))
+
+        if task.responsible:
+            responsible_pill = self.create_responsible_chip(title_line, task.responsible, metrics)
+            responsible_pill.pack(side="left", padx=metrics["tag_pack_padx"])
+            responsible_pill.bind("<Button-1>", lambda _event, tid=task.id: self.set_task_responsible(tid))
 
         if self.editing_task_id == task.id:
             edit_var = tk.StringVar(value=task.title)
