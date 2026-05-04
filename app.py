@@ -188,6 +188,7 @@ class TaskManagerApp:
         self.drag_data = {"task_id": None, "active": False, "target_index": None}
         self.drop_indicator: tk.Frame | None = None
 
+        self.responsible_filter_var = tk.StringVar(value="Todos")
         self.tag_filter_var = tk.StringVar(value="Todas")
         self.storage_status_var = tk.StringVar(value=self.storage_status_text())
 
@@ -378,13 +379,32 @@ class TaskManagerApp:
         reload_button.pack(side="left", padx=(12, 0))
         self.bind_action_button_hover(reload_button, PRIMARY_BUTTON_BG, PRIMARY_BUTTON_HOVER)
 
-        self.filter_menu = tk.OptionMenu(
-            controls,
-            self.tag_filter_var,
-            "Todas",
+        filter_controls = tk.Frame(controls, bg="#eef3f8")
+        filter_controls.pack(side="right")
+
+        tk.Label(
+            filter_controls,
+            text="Filtrar:",
+            font=("Segoe UI", 10),
+            bg="#eef3f8",
+            fg="#334155",
+        ).pack(side="left", padx=(0, 12))
+
+        tk.Label(
+            filter_controls,
+            text="Responsável",
+            font=("Segoe UI", 10),
+            bg="#eef3f8",
+            fg="#334155",
+        ).pack(side="left", padx=(0, 8))
+
+        self.responsible_filter_menu = tk.OptionMenu(
+            filter_controls,
+            self.responsible_filter_var,
+            "Todos",
             command=lambda _value: self.render_tasks(),
         )
-        self.filter_menu.config(
+        self.responsible_filter_menu.config(
             font=("Segoe UI", 10),
             relief="flat",
             bg="white",
@@ -392,15 +412,47 @@ class TaskManagerApp:
             highlightbackground="#cbd5e1",
             activebackground="white",
         )
-        self.filter_menu.pack(side="right", padx=(10, 0))
+        self.responsible_filter_menu.pack(side="left", padx=(0, 14))
 
         tk.Label(
-            controls,
-            text="Filtrar por tag:",
+            filter_controls,
+            text="Tag",
             font=("Segoe UI", 10),
             bg="#eef3f8",
             fg="#334155",
-        ).pack(side="right")
+        ).pack(side="left", padx=(0, 8))
+
+        self.tag_filter_menu = tk.OptionMenu(
+            filter_controls,
+            self.tag_filter_var,
+            "Todas",
+            command=lambda _value: self.render_tasks(),
+        )
+        self.tag_filter_menu.config(
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg="white",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            activebackground="white",
+        )
+        self.tag_filter_menu.pack(side="left")
+
+        tk.Button(
+            filter_controls,
+            text="Limpar filtros",
+            command=self.clear_filters,
+            font=("Segoe UI Semibold", 10),
+            relief="flat",
+            bg=PRIMARY_BUTTON_BG,
+            fg="white",
+            activebackground=PRIMARY_BUTTON_HOVER,
+            activeforeground="white",
+            bd=0,
+            padx=12,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="left", padx=(14, 0))
         self.refresh_filter_options()
 
         container = tk.Frame(self.root, bg="#eef3f8", padx=24, pady=12)
@@ -1273,21 +1325,50 @@ class TaskManagerApp:
         )
 
     def refresh_filter_options(self) -> None:
-        menu = self.filter_menu["menu"]
-        menu.delete(0, "end")
+        responsible_menu = self.responsible_filter_menu["menu"]
+        responsible_menu.delete(0, "end")
 
-        options = ["Todas", *sorted(self.collect_tags())]
-        for option in options:
-            menu.add_command(
+        responsible_options = ["Todos", *sorted(self.collect_responsibles())]
+        for option in responsible_options:
+            responsible_menu.add_command(
                 label=option,
-                command=lambda value=option: self.set_filter(value),
+                command=lambda value=option: self.set_responsible_filter(value),
             )
 
-        if self.tag_filter_var.get() not in options:
+        if self.responsible_filter_var.get() not in responsible_options:
+            self.responsible_filter_var.set("Todos")
+
+        tag_menu = self.tag_filter_menu["menu"]
+        tag_menu.delete(0, "end")
+
+        tag_options = ["Todas", *sorted(self.collect_tags())]
+        for option in tag_options:
+            tag_menu.add_command(
+                label=option,
+                command=lambda value=option: self.set_tag_filter(value),
+            )
+
+        if self.tag_filter_var.get() not in tag_options:
             self.tag_filter_var.set("Todas")
 
-    def set_filter(self, value: str) -> None:
+    def set_responsible_filter(self, value: str) -> None:
+        self.responsible_filter_var.set(value)
+        self.render_tasks()
+
+    def set_tag_filter(self, value: str) -> None:
         self.tag_filter_var.set(value)
+        self.render_tasks()
+
+    def apply_chip_filters(self, responsible: str | None = None, tag: str | None = None) -> None:
+        if responsible is not None:
+            self.responsible_filter_var.set(responsible)
+        if tag is not None:
+            self.tag_filter_var.set(tag)
+        self.render_tasks()
+
+    def clear_filters(self) -> None:
+        self.responsible_filter_var.set("Todos")
+        self.tag_filter_var.set("Todas")
         self.render_tasks()
 
     def collect_tags(self) -> set[str]:
@@ -1297,6 +1378,16 @@ class TaskManagerApp:
                 continue
             tags.update(tag for tag in task.tags if tag.strip())
         return tags
+
+    def collect_responsibles(self) -> set[str]:
+        responsibles: set[str] = set()
+        for task in self.tasks:
+            if self.is_section(task):
+                continue
+            cleaned = task.responsible.strip()
+            if cleaned:
+                responsibles.add(cleaned)
+        return responsibles
 
     def is_section(self, task: Task | None) -> bool:
         return bool(task and task.item_type == "section")
@@ -1314,8 +1405,9 @@ class TaskManagerApp:
         return "white", "#dbe3ec"
 
     def filtered_tasks(self) -> list[Task]:
-        selected = self.tag_filter_var.get()
-        if selected == "Todas":
+        selected_responsible = self.responsible_filter_var.get()
+        selected_tag = self.tag_filter_var.get()
+        if selected_responsible == "Todos" and selected_tag == "Todas":
             return self.tasks
 
         visible: list[Task] = []
@@ -1328,7 +1420,10 @@ class TaskManagerApp:
                 section_added = False
                 continue
 
-            if selected not in task.tags:
+            if selected_responsible != "Todos" and task.responsible.strip() != selected_responsible:
+                continue
+
+            if selected_tag != "Todas" and selected_tag not in task.tags:
                 continue
 
             if current_section and not section_added:
@@ -1793,8 +1888,30 @@ class TaskManagerApp:
         menu.tk_popup(event.x_root, event.y_root)
         menu.grab_release()
 
+    def show_tag_chip_context_menu(self, event, tag_name: str) -> str:
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.configure(font=("Segoe UI", 10))
+        menu.add_command(
+            label=f"Filtrar por tag {tag_name}",
+            command=lambda value=tag_name: self.apply_chip_filters(tag=value),
+        )
+        menu.tk_popup(event.x_root, event.y_root)
+        menu.grab_release()
+        return "break"
+
+    def show_responsible_chip_context_menu(self, event, responsible_name: str) -> str:
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.configure(font=("Segoe UI", 10))
+        menu.add_command(
+            label=f"Filtrar por responsável {responsible_name}",
+            command=lambda value=responsible_name: self.apply_chip_filters(responsible=value),
+        )
+        menu.tk_popup(event.x_root, event.y_root)
+        menu.grab_release()
+        return "break"
+
     def bind_task_context_menu(self, widget: tk.Widget, task_id: str) -> None:
-        widget.bind("<Button-3>", lambda event, tid=task_id: self.show_task_context_menu(event, tid))
+        widget.bind("<Button-3>", lambda event, tid=task_id: self.show_task_context_menu(event, tid), add="+")
         for child in widget.winfo_children():
             self.bind_task_context_menu(child, task_id)
 
@@ -2512,11 +2629,16 @@ class TaskManagerApp:
                 )
                 pill.pack(side="left", padx=metrics["tag_pack_padx"])
                 pill.bind("<Button-1>", lambda _event, tid=task.id: self.edit_task_tags(tid))
+                pill.bind("<Button-3>", lambda event, value=tag: self.show_tag_chip_context_menu(event, value))
 
         if task.responsible:
             responsible_pill = self.create_responsible_chip(title_line, task.responsible, metrics)
             responsible_pill.pack(side="left", padx=metrics["tag_pack_padx"])
             responsible_pill.bind("<Button-1>", lambda _event, tid=task.id: self.set_task_responsible(tid))
+            responsible_pill.bind(
+                "<Button-3>",
+                lambda event, value=task.responsible: self.show_responsible_chip_context_menu(event, value),
+            )
 
         if self.editing_task_id == task.id:
             edit_var = tk.StringVar(value=task.title)
@@ -2697,10 +2819,10 @@ class TaskManagerApp:
         self.bind_task_context_menu(row, task.id)
 
     def start_drag(self, event, task_id: str) -> None:
-        if self.tag_filter_var.get() != "Todas":
+        if self.tag_filter_var.get() != "Todas" or self.responsible_filter_var.get() != "Todos":
             messagebox.showinfo(
                 "Reordenação desativada",
-                "Limpe o filtro de tags para reorganizar a lista completa.",
+                "Limpe os filtros para reorganizar a lista completa.",
             )
             return
 
