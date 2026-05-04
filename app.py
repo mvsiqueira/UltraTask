@@ -379,80 +379,97 @@ class TaskManagerApp:
         reload_button.pack(side="left", padx=(12, 0))
         self.bind_action_button_hover(reload_button, PRIMARY_BUTTON_BG, PRIMARY_BUTTON_HOVER)
 
-        filter_controls = tk.Frame(controls, bg="#eef3f8")
-        filter_controls.pack(side="right")
+        # Filter panel kept isolated in one block to make rollback easy if needed.
+        filter_shell = tk.Frame(controls, bg="#eef3f8")
+        filter_shell.pack(side="right")
+
+        filter_panel = tk.Frame(
+            filter_shell,
+            bg="#f8fbff",
+            highlightthickness=1,
+            highlightbackground="#d7e3f4",
+            padx=10,
+            pady=7,
+        )
+        filter_panel.pack(side="right")
 
         tk.Label(
-            filter_controls,
+            filter_panel,
             text="Filtrar:",
-            font=("Segoe UI", 10),
-            bg="#eef3f8",
-            fg="#334155",
-        ).pack(side="left", padx=(0, 12))
+            font=("Segoe UI Semibold", 9),
+            bg="#f8fbff",
+            fg="#1e3a8a",
+        ).pack(side="left", padx=(0, 10))
 
         tk.Label(
-            filter_controls,
+            filter_panel,
             text="Responsável",
-            font=("Segoe UI", 10),
-            bg="#eef3f8",
+            font=("Segoe UI", 9),
+            bg="#f8fbff",
             fg="#334155",
-        ).pack(side="left", padx=(0, 8))
+        ).pack(side="left", padx=(0, 6))
 
         self.responsible_filter_menu = tk.OptionMenu(
-            filter_controls,
+            filter_panel,
             self.responsible_filter_var,
             "Todos",
             command=lambda _value: self.render_tasks(),
         )
         self.responsible_filter_menu.config(
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 9),
             relief="flat",
             bg="white",
             highlightthickness=1,
             highlightbackground="#cbd5e1",
             activebackground="white",
+            width=10,
+            anchor="w",
         )
-        self.responsible_filter_menu.pack(side="left", padx=(0, 14))
+        self.responsible_filter_menu["menu"].config(font=("Segoe UI", 9))
+        self.responsible_filter_menu.pack(side="left", padx=(0, 12))
 
         tk.Label(
-            filter_controls,
+            filter_panel,
             text="Tag",
-            font=("Segoe UI", 10),
-            bg="#eef3f8",
+            font=("Segoe UI", 9),
+            bg="#f8fbff",
             fg="#334155",
-        ).pack(side="left", padx=(0, 8))
+        ).pack(side="left", padx=(0, 6))
 
         self.tag_filter_menu = tk.OptionMenu(
-            filter_controls,
+            filter_panel,
             self.tag_filter_var,
             "Todas",
             command=lambda _value: self.render_tasks(),
         )
         self.tag_filter_menu.config(
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 9),
             relief="flat",
             bg="white",
             highlightthickness=1,
             highlightbackground="#cbd5e1",
             activebackground="white",
+            width=8,
+            anchor="w",
         )
+        self.tag_filter_menu["menu"].config(font=("Segoe UI", 9))
         self.tag_filter_menu.pack(side="left")
 
         tk.Button(
-            filter_controls,
+            filter_panel,
             text="Limpar filtros",
             command=self.clear_filters,
-            font=("Segoe UI Semibold", 10),
+            font=("Segoe UI Semibold", 9),
             relief="flat",
             bg=PRIMARY_BUTTON_BG,
             fg="white",
             activebackground=PRIMARY_BUTTON_HOVER,
             activeforeground="white",
             bd=0,
-            padx=12,
-            pady=8,
+            padx=10,
+            pady=6,
             cursor="hand2",
-        ).pack(side="left", padx=(14, 0))
+        ).pack(side="left", padx=(12, 0))
         self.refresh_filter_options()
 
         container = tk.Frame(self.root, bg="#eef3f8", padx=24, pady=12)
@@ -1380,14 +1397,14 @@ class TaskManagerApp:
         return tags
 
     def collect_responsibles(self) -> set[str]:
-        responsibles: set[str] = set()
+        responsibles: dict[str, str] = {}
         for task in self.tasks:
             if self.is_section(task):
                 continue
             cleaned = task.responsible.strip()
             if cleaned:
-                responsibles.add(cleaned)
-        return responsibles
+                responsibles.setdefault(cleaned.lower(), cleaned)
+        return set(responsibles.values())
 
     def is_section(self, task: Task | None) -> bool:
         return bool(task and task.item_type == "section")
@@ -1413,6 +1430,7 @@ class TaskManagerApp:
         visible: list[Task] = []
         current_section: Task | None = None
         section_added = False
+        selected_responsible_key = selected_responsible.lower()
 
         for task in self.tasks:
             if self.is_section(task):
@@ -1420,7 +1438,7 @@ class TaskManagerApp:
                 section_added = False
                 continue
 
-            if selected_responsible != "Todos" and task.responsible.strip() != selected_responsible:
+            if selected_responsible != "Todos" and task.responsible.strip().lower() != selected_responsible_key:
                 continue
 
             if selected_tag != "Todas" and selected_tag not in task.tags:
