@@ -508,6 +508,25 @@ class TaskManagerApp:
     def on_canvas_configure(self, event) -> None:
         self.canvas.itemconfigure(self.list_window, width=event.width)
 
+    def current_scroll_fraction(self) -> float:
+        yview = self.canvas.yview()
+        if not yview:
+            return 0.0
+        return float(yview[0])
+
+    def restore_scroll_fraction(self, fraction: float) -> None:
+        self.root.update_idletasks()
+        scrollregion = self.canvas.bbox("all")
+        if not scrollregion:
+            return
+
+        content_height = scrollregion[3] - scrollregion[1]
+        if content_height <= self.canvas.winfo_height():
+            self.canvas.yview_moveto(0)
+            return
+
+        self.canvas.yview_moveto(max(0.0, min(fraction, 1.0)))
+
     def on_mousewheel(self, event) -> None:
         if not self.pointer_over_scroll_area():
             return
@@ -1457,7 +1476,7 @@ class TaskManagerApp:
         self.inline_title_entry = None
         self.inline_title_var = None
         self.editing_task_id = task_id
-        self.render_tasks()
+        self.render_tasks(preserve_scroll=True)
 
     def edit_file_title(self) -> None:
         self.editing_file_title = True
@@ -1504,16 +1523,16 @@ class TaskManagerApp:
         self.inline_title_var = None
         if cleaned != task.title:
             task.title = cleaned
-            self.persist_and_refresh()
+            self.persist_and_refresh(preserve_scroll=True)
             return
 
-        self.render_tasks()
+        self.render_tasks(preserve_scroll=True)
 
     def cancel_inline_task_title(self) -> None:
         self.editing_task_id = None
         self.inline_title_entry = None
         self.inline_title_var = None
-        self.render_tasks()
+        self.render_tasks(preserve_scroll=True)
 
     def edit_task_tags(self, task_id: str) -> None:
         task = self.find_task(task_id)
@@ -1782,11 +1801,11 @@ class TaskManagerApp:
     def find_task(self, task_id: str) -> Task | None:
         return next((task for task in self.tasks if task.id == task_id), None)
 
-    def persist_and_refresh(self) -> None:
+    def persist_and_refresh(self, preserve_scroll: bool = False) -> None:
         self.save_tasks()
         self.storage_status_var.set(self.storage_status_text())
         self.refresh_filter_options()
-        self.render_tasks()
+        self.render_tasks(preserve_scroll=preserve_scroll)
 
     def reload_tasks_from_disk(self) -> None:
         self.tasks = self.load_tasks()
@@ -2409,7 +2428,8 @@ class TaskManagerApp:
         self.render_tasks()
         refresh_callback()
 
-    def render_tasks(self) -> None:
+    def render_tasks(self, preserve_scroll: bool = False) -> None:
+        scroll_fraction = self.current_scroll_fraction() if preserve_scroll else 0.0
         for child in self.list_frame.winfo_children():
             child.destroy()
         self.task_rows.clear()
@@ -2426,10 +2446,15 @@ class TaskManagerApp:
                 pady=32,
             )
             empty.pack(fill="x")
+            if preserve_scroll:
+                self.restore_scroll_fraction(scroll_fraction)
             return
 
         for task in tasks:
             self.create_task_row(task)
+
+        if preserve_scroll:
+            self.restore_scroll_fraction(scroll_fraction)
 
     def create_task_row(self, task: Task) -> None:
         if self.is_section(task):
