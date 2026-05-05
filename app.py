@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass, asdict, field
-from datetime import date
+from datetime import date, datetime
 from html import escape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -8,7 +8,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from typing import Any
 from tkcalendar import Calendar
-from tkinter import colorchooser, filedialog, messagebox, simpledialog
+from tkinter import colorchooser, filedialog, messagebox, simpledialog, ttk
 from uuid import uuid4
 
 
@@ -17,6 +17,7 @@ DEFAULT_DATA_FILE = APP_DIR / "tasks.json"
 SETTINGS_FILE = APP_DIR / "settings.json"
 APP_ICON_FILE = APP_DIR / "assets" / "app-icon.png"
 APP_ICON_ICO_FILE = APP_DIR / "assets" / "app-icon.ico"
+BUILD_TIMESTAMP = datetime.fromtimestamp(APP_DIR.joinpath("app.py").stat().st_mtime).strftime("%d/%m/%Y %H:%M")
 DEFAULT_TAG_COLOR = "#2563EB"
 DEFAULT_RESPONSIBLE_COLOR = "#0F766E"
 DEFAULT_SECTION_COLOR = "#B45309"
@@ -493,6 +494,17 @@ class TaskManagerApp:
         self.list_frame.bind("<Configure>", self.on_frame_configure)
         self.canvas.bind("<Configure>", self.on_canvas_configure)
         self.canvas.bind_all("<MouseWheel>", self.on_mousewheel)
+
+        app_footer = tk.Frame(self.root, bg="#eef3f8", padx=24)
+        app_footer.pack(fill="x", pady=(0, 10))
+
+        tk.Label(
+            app_footer,
+            text=f"Build: {BUILD_TIMESTAMP}",
+            font=("Segoe UI", 8),
+            bg="#eef3f8",
+            fg="#64748b",
+        ).pack(side="right")
 
     def bind_header_button_hover(self, button: tk.Button) -> None:
         def on_enter(_event) -> None:
@@ -2252,12 +2264,14 @@ class TaskManagerApp:
     def open_tag_manager(self, on_close=None) -> None:
         window = tk.Toplevel(self.root)
         window.title("Gerenciar tags")
-        window.geometry("560x480")
-        window.minsize(500, 420)
+        window.geometry("560x560")
+        window.minsize(500, 520)
         window.configure(bg="#eef3f8")
         window.transient(self.root)
         window.grab_set()
         self.center_window(window)
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(0, weight=1)
 
         if on_close is not None:
             def handle_close() -> None:
@@ -2266,24 +2280,29 @@ class TaskManagerApp:
 
             window.protocol("WM_DELETE_WINDOW", handle_close)
 
+        content = tk.Frame(window, bg="#eef3f8")
+        content.grid(row=0, column=0, sticky="nsew")
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_rowconfigure(3, weight=1)
+
         tk.Label(
-            window,
+            content,
             text="Cadastro de tags",
             font=("Segoe UI Semibold", 18),
             bg="#eef3f8",
             fg="#0f172a",
-        ).pack(anchor="w", padx=24, pady=(20, 8))
+        ).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 8))
 
         tk.Label(
-            window,
+            content,
             text="Cadastre tags globais, escolha uma cor e reutilize essas tags nas tarefas.",
             font=("Segoe UI", 10),
             bg="#eef3f8",
             fg="#475569",
-        ).pack(anchor="w", padx=24)
+        ).grid(row=1, column=0, sticky="w", padx=24)
 
-        form = tk.Frame(window, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
-        form.pack(fill="x", padx=24, pady=18)
+        form = tk.Frame(content, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
+        form.grid(row=2, column=0, sticky="ew", padx=24, pady=18)
 
         name_var = tk.StringVar()
         color_var = tk.StringVar(value=DEFAULT_TAG_COLOR)
@@ -2325,11 +2344,48 @@ class TaskManagerApp:
         )
         color_button.pack(side="left", padx=(10, 0))
 
-        list_panel = tk.Frame(window, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
-        list_panel.pack(fill="both", expand=True, padx=24)
+        list_panel = tk.Frame(content, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
+        list_panel.grid(row=3, column=0, sticky="nsew", padx=24, pady=(0, 16))
+        list_panel.grid_columnconfigure(0, weight=1)
+        list_panel.grid_rowconfigure(0, weight=1)
 
-        list_body = tk.Frame(list_panel, bg="white")
-        list_body.pack(fill="both", expand=True, padx=16, pady=16)
+        list_canvas = tk.Canvas(list_panel, bg="white", highlightthickness=0, bd=0, height=200)
+        list_scrollbar = ttk.Scrollbar(list_panel, orient="vertical", command=list_canvas.yview)
+        list_canvas.configure(yscrollcommand=list_scrollbar.set)
+        list_canvas.grid(row=0, column=0, sticky="nsew")
+        list_scrollbar.grid(row=0, column=1, sticky="ns")
+
+        list_body = tk.Frame(list_canvas, bg="white")
+        list_body_window = list_canvas.create_window((0, 0), window=list_body, anchor="nw")
+
+        def sync_tag_list_width(_event=None) -> None:
+            list_canvas.itemconfigure(list_body_window, width=list_canvas.winfo_width())
+
+        def refresh_tag_list_scrollregion(_event=None) -> None:
+            list_canvas.configure(scrollregion=list_canvas.bbox("all"))
+
+        def tag_list_on_mousewheel(event) -> str | None:
+            scrollregion = list_canvas.bbox("all")
+            if not scrollregion:
+                return None
+
+            content_height = scrollregion[3] - scrollregion[1]
+            if content_height <= list_canvas.winfo_height():
+                return "break"
+
+            delta = int(-event.delta / 120)
+            if delta != 0:
+                list_canvas.yview_scroll(delta, "units")
+                return "break"
+            return None
+
+        def bind_tag_list_mousewheel(widget: tk.Widget) -> None:
+            widget.bind("<MouseWheel>", tag_list_on_mousewheel, add="+")
+
+        list_body.bind("<Configure>", refresh_tag_list_scrollregion)
+        list_canvas.bind("<Configure>", sync_tag_list_width)
+        bind_tag_list_mousewheel(list_canvas)
+        bind_tag_list_mousewheel(list_body)
 
         def refresh_tags() -> None:
             for child in list_body.winfo_children():
@@ -2342,14 +2398,15 @@ class TaskManagerApp:
                     font=("Segoe UI", 10),
                     bg="white",
                     fg="#64748b",
-                ).pack(anchor="w")
+                ).pack(anchor="w", padx=16, pady=16)
                 return
 
             for item in self.sorted_tag_catalog():
                 row = tk.Frame(list_body, bg="white")
-                row.pack(fill="x", pady=4)
+                row.pack(fill="x", padx=16, pady=4)
+                bind_tag_list_mousewheel(row)
 
-                tk.Label(
+                name_label = tk.Label(
                     row,
                     text=item["name"],
                     font=("Segoe UI Semibold", 10),
@@ -2357,17 +2414,21 @@ class TaskManagerApp:
                     fg=self.contrast_text_color(item["color"]),
                     padx=10,
                     pady=4,
-                ).pack(side="left")
+                )
+                name_label.pack(side="left")
+                bind_tag_list_mousewheel(name_label)
 
-                tk.Label(
+                color_label = tk.Label(
                     row,
                     text=item["color"],
                     font=("Consolas", 9),
                     bg="white",
                     fg="#475569",
-                ).pack(side="left", padx=(10, 0))
+                )
+                color_label.pack(side="left", padx=(10, 0))
+                bind_tag_list_mousewheel(color_label)
 
-                tk.Button(
+                color_action = tk.Button(
                     row,
                     text="Cor",
                     command=lambda name=item["name"]: self.update_tag_color(name, refresh_tags),
@@ -2379,9 +2440,11 @@ class TaskManagerApp:
                     padx=10,
                     pady=6,
                     cursor="hand2",
-                ).pack(side="right")
+                )
+                color_action.pack(side="right")
+                bind_tag_list_mousewheel(color_action)
 
-                tk.Button(
+                delete_action = tk.Button(
                     row,
                     text="Excluir",
                     command=lambda name=item["name"]: self.delete_tag(name, refresh_tags),
@@ -2393,9 +2456,11 @@ class TaskManagerApp:
                     padx=10,
                     pady=6,
                     cursor="hand2",
-                ).pack(side="right", padx=(0, 8))
+                )
+                delete_action.pack(side="right", padx=(0, 8))
+                bind_tag_list_mousewheel(delete_action)
 
-                tk.Button(
+                rename_action = tk.Button(
                     row,
                     text="Renomear",
                     command=lambda name=item["name"]: self.rename_tag(name, refresh_tags),
@@ -2407,12 +2472,14 @@ class TaskManagerApp:
                     padx=10,
                     pady=6,
                     cursor="hand2",
-                ).pack(side="right", padx=(0, 8))
+                )
+                rename_action.pack(side="right", padx=(0, 8))
+                bind_tag_list_mousewheel(rename_action)
 
         refresh_tags()
 
-        footer = tk.Frame(window, bg="#eef3f8")
-        footer.pack(fill="x", padx=24, pady=20)
+        footer = tk.Frame(content, bg="#eef3f8")
+        footer.grid(row=4, column=0, sticky="ew", padx=24, pady=(0, 20))
 
         tk.Button(
             footer,
