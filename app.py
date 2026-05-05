@@ -188,6 +188,7 @@ class TaskManagerApp:
         self.task_rows: dict[str, tk.Frame] = {}
         self.drag_data = {"task_id": None, "active": False, "target_index": None}
         self.drop_indicator: tk.Frame | None = None
+        self.tag_drag_data = {"key": None, "active": False, "target_index": None}
 
         self.responsible_filter_var = tk.StringVar(value="Todos")
         self.tag_filter_var = tk.StringVar(value="Todas")
@@ -691,14 +692,76 @@ class TaskManagerApp:
             catalog[key] = {
                 "name": name,
                 "color": self.normalize_color(item.get("color")),
+                "order": int(item.get("order", len(catalog))),
             }
+        self.reindex_tag_catalog(catalog)
         return catalog
 
     def save_tag_catalog(self) -> None:
         self.save_tasks()
 
     def sorted_tag_catalog(self) -> list[dict]:
-        return sorted(self.tag_catalog.values(), key=lambda item: item["name"].lower())
+        return sorted(
+            self.tag_catalog.values(),
+            key=lambda item: (int(item.get("order", 0)), item["name"].lower()),
+        )
+
+    def tag_order_keys(self) -> list[str]:
+        return [item["name"].lower() for item in self.sorted_tag_catalog()]
+
+    def next_tag_order(self) -> int:
+        if not self.tag_catalog:
+            return 0
+        return max(int(item.get("order", index)) for index, item in enumerate(self.tag_catalog.values())) + 1
+
+    def reindex_tag_catalog(self, catalog: dict[str, dict] | None = None) -> None:
+        target = catalog if catalog is not None else self.tag_catalog
+        ordered_items = sorted(
+            target.items(),
+            key=lambda pair: (int(pair[1].get("order", 0)), pair[1]["name"].lower()),
+        )
+        for index, (_key, item) in enumerate(ordered_items):
+            item["order"] = index
+
+    def reorder_tag_catalog(self, ordered_keys: list[str]) -> None:
+        remaining = [key for key in self.tag_catalog if key not in ordered_keys]
+        final_keys = [*ordered_keys, *remaining]
+        for index, key in enumerate(final_keys):
+            item = self.tag_catalog.get(key)
+            if item is not None:
+                item["order"] = index
+
+    def move_tag_order(self, key: str, direction: int) -> bool:
+        current_order = self.tag_order_keys()
+        if key not in current_order:
+            return False
+
+        current_index = current_order.index(key)
+        target_index = current_index + direction
+        if target_index < 0 or target_index >= len(current_order):
+            return False
+
+        current_order[current_index], current_order[target_index] = current_order[target_index], current_order[current_index]
+        self.reorder_tag_catalog(current_order)
+        return True
+
+    def ordered_task_tags(self, tags: list[str]) -> list[str]:
+        unique_tags: list[str] = []
+        seen: set[str] = set()
+        for tag in tags:
+            key = self.clean_tag_name(tag).lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            unique_tags.append(self.tag_catalog.get(key, {"name": self.clean_tag_name(tag)})["name"])
+
+        return sorted(
+            unique_tags,
+            key=lambda tag: (
+                int(self.tag_catalog.get(tag.lower(), {}).get("order", 10**9)),
+                tag.lower(),
+            ),
+        )
 
     def clean_tag_name(self, name: str) -> str:
         return str(name).strip()
@@ -726,6 +789,7 @@ class TaskManagerApp:
         self.tag_catalog[key] = {
             "name": cleaned,
             "color": self.normalize_color(color),
+            "order": self.next_tag_order(),
         }
         self.save_tag_catalog()
         return cleaned
@@ -741,7 +805,11 @@ class TaskManagerApp:
                     continue
                 key = cleaned.lower()
                 if key not in self.tag_catalog:
-                    self.tag_catalog[key] = {"name": cleaned, "color": DEFAULT_TAG_COLOR}
+                    self.tag_catalog[key] = {
+                        "name": cleaned,
+                        "color": DEFAULT_TAG_COLOR,
+                        "order": self.next_tag_order(),
+                    }
                     changed = True
 
         if changed:
@@ -780,8 +848,9 @@ class TaskManagerApp:
                 seen.add(key)
                 normalized.append(self.tag_catalog.get(key, {"name": cleaned})["name"])
 
-            if normalized != task.tags:
-                task.tags = normalized
+            ordered_normalized = self.ordered_task_tags(normalized)
+            if ordered_normalized != task.tags:
+                task.tags = ordered_normalized
                 changed = True
 
         if changed:
@@ -1344,7 +1413,7 @@ class TaskManagerApp:
             "title": self.file_title.strip() or self.default_file_title(),
             "tasks": [asdict(task) for task in current],
             "tag_catalog": [
-                {"name": item["name"], "color": item["color"]}
+                {"name": item["name"], "color": item["color"], "order": int(item.get("order", 0))}
                 for item in self.sorted_tag_catalog()
             ],
         }
@@ -1370,7 +1439,10 @@ class TaskManagerApp:
         tag_menu = self.tag_filter_menu["menu"]
         tag_menu.delete(0, "end")
 
-        tag_options = ["Todas", *sorted(self.collect_tags())]
+        catalog_tag_names = [item["name"] for item in self.sorted_tag_catalog()]
+        catalog_tag_name_set = set(catalog_tag_names)
+        extra_tags = sorted(tag for tag in self.collect_tags() if tag not in catalog_tag_name_set)
+        tag_options = ["Todas", *catalog_tag_names, *extra_tags]
         for option in tag_options:
             tag_menu.add_command(
                 label=option,
@@ -1819,6 +1891,7 @@ class TaskManagerApp:
             for item in self.sorted_tag_catalog()
             if selected.get(item["name"].lower()) and selected[item["name"].lower()].get()
         ]
+        task.tags = self.ordered_task_tags(task.tags)
         window.destroy()
         self.persist_and_refresh()
 
@@ -1965,8 +2038,8 @@ class TaskManagerApp:
     def open_settings_window(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Configurações")
-        window.geometry("680x460")
-        window.minsize(620, 430)
+        window.geometry("680x580")
+        window.minsize(620, 540)
         window.configure(bg="#eef3f8")
         window.transient(self.root)
         window.grab_set()
@@ -1989,7 +2062,7 @@ class TaskManagerApp:
         ).pack(anchor="w", padx=24)
 
         panel = tk.Frame(window, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
-        panel.pack(fill="x", padx=24, pady=20)
+        panel.pack(fill="both", expand=True, padx=24, pady=(20, 12))
 
         file_path_var = tk.StringVar(value=str(self.tasks_file))
         layout_var = tk.StringVar(value="Compacto" if self.layout_mode == "compact" else "Normal")
@@ -2100,8 +2173,41 @@ class TaskManagerApp:
             cursor="hand2",
         ).pack(side="left", padx=(10, 0))
 
+        tk.Label(
+            panel,
+            text="Tags",
+            font=("Segoe UI Semibold", 10),
+            bg="white",
+            fg="#0f172a",
+        ).pack(anchor="w", padx=16, pady=(4, 8))
+
+        tags_row = tk.Frame(panel, bg="white")
+        tags_row.pack(fill="x", padx=16, pady=(0, 16))
+
+        tk.Label(
+            tags_row,
+            text="Abra o cadastro para criar, editar e reorganizar tags.",
+            font=("Segoe UI", 10),
+            bg="white",
+            fg="#475569",
+        ).pack(side="left")
+
+        tk.Button(
+            tags_row,
+            text="Gerenciar tags",
+            command=self.open_tag_manager,
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=12,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="right")
+
         footer = tk.Frame(window, bg="#eef3f8")
-        footer.pack(fill="x", padx=24, pady=(0, 20))
+        footer.pack(fill="x", padx=24, pady=(0, 24))
 
         tk.Button(
             footer,
@@ -2275,8 +2381,17 @@ class TaskManagerApp:
 
         if on_close is not None:
             def handle_close() -> None:
+                self.refresh_filter_options()
+                self.render_tasks()
                 window.destroy()
                 on_close()
+
+            window.protocol("WM_DELETE_WINDOW", handle_close)
+        else:
+            def handle_close() -> None:
+                self.refresh_filter_options()
+                self.render_tasks()
+                window.destroy()
 
             window.protocol("WM_DELETE_WINDOW", handle_close)
 
@@ -2387,6 +2502,12 @@ class TaskManagerApp:
         bind_tag_list_mousewheel(list_canvas)
         bind_tag_list_mousewheel(list_body)
 
+        def move_tag_and_refresh(key: str, direction: int) -> None:
+            if not self.move_tag_order(key, direction):
+                return
+            self.save_tag_catalog()
+            refresh_tags()
+
         def refresh_tags() -> None:
             for child in list_body.winfo_children():
                 child.destroy()
@@ -2401,10 +2522,65 @@ class TaskManagerApp:
                 ).pack(anchor="w", padx=16, pady=16)
                 return
 
-            for item in self.sorted_tag_catalog():
+            ordered_items = self.sorted_tag_catalog()
+            for index, item in enumerate(ordered_items):
+                tag_key = item["name"].lower()
                 row = tk.Frame(list_body, bg="white")
-                row.pack(fill="x", padx=16, pady=4)
+                row.pack(fill="x", padx=12, pady=3)
                 bind_tag_list_mousewheel(row)
+
+                order_panel = tk.Frame(
+                    row,
+                    bg="#f8fbff",
+                    highlightthickness=1,
+                    highlightbackground="#dbe7f5",
+                    padx=3,
+                    pady=3,
+                )
+                order_panel.pack(side="left", padx=(0, 10))
+                bind_tag_list_mousewheel(order_panel)
+
+                move_up_button = tk.Button(
+                    order_panel,
+                    text="▲",
+                    command=lambda key=tag_key: move_tag_and_refresh(key, -1),
+                    font=("Segoe UI", 7),
+                    relief="flat",
+                    bg="#f8fbff",
+                    fg="#64748b",
+                    activebackground="#e2e8f0",
+                    activeforeground="#334155",
+                    bd=0,
+                    width=2,
+                    padx=0,
+                    pady=0,
+                    cursor="hand2",
+                    state="normal" if index > 0 else "disabled",
+                    disabledforeground="#cbd5e1",
+                )
+                move_up_button.pack()
+                bind_tag_list_mousewheel(move_up_button)
+
+                move_down_button = tk.Button(
+                    order_panel,
+                    text="▼",
+                    command=lambda key=tag_key: move_tag_and_refresh(key, 1),
+                    font=("Segoe UI", 7),
+                    relief="flat",
+                    bg="#f8fbff",
+                    fg="#64748b",
+                    activebackground="#e2e8f0",
+                    activeforeground="#334155",
+                    bd=0,
+                    width=2,
+                    padx=0,
+                    pady=0,
+                    cursor="hand2",
+                    state="normal" if index < len(ordered_items) - 1 else "disabled",
+                    disabledforeground="#cbd5e1",
+                )
+                move_down_button.pack(pady=(2, 0))
+                bind_tag_list_mousewheel(move_down_button)
 
                 name_label = tk.Label(
                     row,
@@ -2431,7 +2607,7 @@ class TaskManagerApp:
                 color_action = tk.Button(
                     row,
                     text="Cor",
-                    command=lambda name=item["name"]: self.update_tag_color(name, refresh_tags),
+                    command=lambda name=item["name"]: self.update_tag_color(name, refresh_tags, refresh_main=False),
                     font=("Segoe UI", 9),
                     relief="flat",
                     bg=SECONDARY_BUTTON_BG,
@@ -2447,7 +2623,7 @@ class TaskManagerApp:
                 delete_action = tk.Button(
                     row,
                     text="Excluir",
-                    command=lambda name=item["name"]: self.delete_tag(name, refresh_tags),
+                    command=lambda name=item["name"]: self.delete_tag(name, refresh_tags, refresh_main=False),
                     font=("Segoe UI", 9),
                     relief="flat",
                     bg=SECONDARY_BUTTON_BG,
@@ -2463,7 +2639,7 @@ class TaskManagerApp:
                 rename_action = tk.Button(
                     row,
                     text="Renomear",
-                    command=lambda name=item["name"]: self.rename_tag(name, refresh_tags),
+                    command=lambda name=item["name"]: self.rename_tag(name, refresh_tags, refresh_main=False),
                     font=("Segoe UI", 9),
                     relief="flat",
                     bg=SECONDARY_BUTTON_BG,
@@ -2484,7 +2660,7 @@ class TaskManagerApp:
         tk.Button(
             footer,
             text="Adicionar tag",
-            command=lambda: self.create_tag(name_var, color_var, color_button, refresh_tags),
+            command=lambda: self.create_tag(name_var, color_var, color_button, refresh_tags, refresh_main=False),
             font=("Segoe UI Semibold", 10),
             relief="flat",
             bg=PRIMARY_BUTTON_BG,
@@ -2499,7 +2675,7 @@ class TaskManagerApp:
         tk.Button(
             footer,
             text="Fechar",
-            command=window.destroy if on_close is None else handle_close,
+            command=handle_close,
             font=("Segoe UI", 10),
             relief="flat",
             bg=SECONDARY_BUTTON_BG,
@@ -2530,6 +2706,7 @@ class TaskManagerApp:
         color_var: tk.StringVar,
         color_button: tk.Button,
         refresh_callback,
+        refresh_main: bool = True,
     ) -> None:
         cleaned = self.clean_tag_name(name_var.get())
         if not cleaned:
@@ -2543,6 +2720,7 @@ class TaskManagerApp:
         self.tag_catalog[cleaned.lower()] = {
             "name": cleaned,
             "color": self.normalize_color(color_var.get()),
+            "order": self.next_tag_order(),
         }
         self.save_tag_catalog()
         name_var.set("")
@@ -2553,11 +2731,12 @@ class TaskManagerApp:
             activebackground=DEFAULT_TAG_COLOR,
             activeforeground=self.contrast_text_color(DEFAULT_TAG_COLOR),
         )
-        self.refresh_filter_options()
-        self.render_tasks()
+        if refresh_main:
+            self.refresh_filter_options()
+            self.render_tasks()
         refresh_callback()
 
-    def rename_tag(self, current_name: str, refresh_callback) -> None:
+    def rename_tag(self, current_name: str, refresh_callback, refresh_main: bool = True) -> None:
         answer = simpledialog.askstring(
             "Renomear tag",
             "Novo nome da tag:",
@@ -2590,11 +2769,12 @@ class TaskManagerApp:
 
         self.save_tag_catalog()
         self.save_tasks()
-        self.refresh_filter_options()
-        self.render_tasks()
+        if refresh_main:
+            self.refresh_filter_options()
+            self.render_tasks()
         refresh_callback()
 
-    def update_tag_color(self, name: str, refresh_callback) -> None:
+    def update_tag_color(self, name: str, refresh_callback, refresh_main: bool = True) -> None:
         item = self.get_tag_entry(name)
         if not item:
             return
@@ -2605,10 +2785,11 @@ class TaskManagerApp:
 
         item["color"] = self.normalize_color(chosen)
         self.save_tag_catalog()
-        self.render_tasks()
+        if refresh_main:
+            self.render_tasks()
         refresh_callback()
 
-    def delete_tag(self, name: str, refresh_callback) -> None:
+    def delete_tag(self, name: str, refresh_callback, refresh_main: bool = True) -> None:
         task_count = sum(1 for task in self.tasks if name in task.tags)
         message = f"Deseja excluir a tag '{name}'?"
         if task_count:
@@ -2621,13 +2802,15 @@ class TaskManagerApp:
             return
 
         self.tag_catalog.pop(name.lower(), None)
+        self.reindex_tag_catalog()
         for task in self.tasks:
             task.tags = [tag for tag in task.tags if tag.lower() != name.lower()]
 
         self.save_tag_catalog()
         self.save_tasks()
-        self.refresh_filter_options()
-        self.render_tasks()
+        if refresh_main:
+            self.refresh_filter_options()
+            self.render_tasks()
         refresh_callback()
 
     def render_tasks(self, preserve_scroll: bool = False) -> None:
@@ -2699,8 +2882,9 @@ class TaskManagerApp:
         title_font.configure(overstrike=1 if task.completed else 0)
         title_color = "#94a3b8" if task.completed else "#0f172a"
 
-        if task.tags:
-            for tag in task.tags:
+        ordered_tags = self.ordered_task_tags(task.tags)
+        if ordered_tags:
+            for tag in ordered_tags:
                 color = self.get_tag_color(tag)
                 pill = tk.Label(
                     title_line,
@@ -2957,10 +3141,15 @@ class TaskManagerApp:
                 return index
         return -1
 
-    def target_index_from_pointer(self, y_root: int) -> int | None:
+    def reorder_target_from_pointer(
+        self,
+        ordered_keys: list[str],
+        row_widgets: dict[str, tk.Widget],
+        y_root: int,
+    ) -> int | None:
         self.root.update_idletasks()
-        for index, task in enumerate(self.tasks):
-            row = self.task_rows.get(task.id)
+        for index, key in enumerate(ordered_keys):
+            row = row_widgets.get(key)
             if not row or not row.winfo_exists():
                 continue
 
@@ -2971,36 +3160,80 @@ class TaskManagerApp:
             if top <= y_root <= bottom:
                 return index if y_root <= midpoint else index + 1
 
-        if not self.tasks:
+        if not ordered_keys:
             return 0
 
-        first_row = self.task_rows.get(self.tasks[0].id)
-        last_row = self.task_rows.get(self.tasks[-1].id)
+        first_row = row_widgets.get(ordered_keys[0])
+        last_row = row_widgets.get(ordered_keys[-1])
         if first_row and y_root < first_row.winfo_rooty():
             return 0
         if last_row and y_root > last_row.winfo_rooty() + last_row.winfo_height():
-            return len(self.tasks)
+            return len(ordered_keys)
         return None
 
-    def show_drop_indicator(self, target_index: int) -> None:
-        if not self.drop_indicator:
+    def show_reorder_indicator(
+        self,
+        indicator: tk.Frame | None,
+        container: tk.Widget,
+        ordered_keys: list[str],
+        row_widgets: dict[str, tk.Widget],
+        target_index: int,
+        edge_pady: tuple[int, int] = (4, 0),
+        leading_pady: tuple[int, int] = (0, 4),
+        middle_pady: int = 2,
+    ) -> None:
+        if not indicator:
             return
 
-        self.drop_indicator.pack_forget()
-
-        visible_rows = [self.task_rows[task.id] for task in self.tasks if task.id in self.task_rows]
+        indicator.pack_forget()
+        visible_rows = [row_widgets[key] for key in ordered_keys if key in row_widgets and row_widgets[key].winfo_exists()]
         if not visible_rows:
             return
 
         if target_index <= 0:
-            self.drop_indicator.pack(in_=self.list_frame, before=visible_rows[0], fill="x", pady=(0, 4))
+            indicator.pack(in_=container, before=visible_rows[0], fill="x", pady=leading_pady)
             return
 
         if target_index >= len(visible_rows):
-            self.drop_indicator.pack(in_=self.list_frame, after=visible_rows[-1], fill="x", pady=(4, 0))
+            indicator.pack(in_=container, after=visible_rows[-1], fill="x", pady=edge_pady)
             return
 
-        self.drop_indicator.pack(in_=self.list_frame, before=visible_rows[target_index], fill="x", pady=2)
+        indicator.pack(in_=container, before=visible_rows[target_index], fill="x", pady=middle_pady)
+
+    def auto_scroll_canvas(self, canvas: tk.Canvas, y_root: int) -> None:
+        scrollregion = canvas.bbox("all")
+        if not scrollregion:
+            return
+
+        content_height = scrollregion[3] - scrollregion[1]
+        canvas_height = canvas.winfo_height()
+        if content_height <= canvas_height:
+            canvas.yview_moveto(0)
+            return
+
+        canvas_top = canvas.winfo_rooty()
+        canvas_bottom = canvas_top + canvas_height
+        top_fraction, bottom_fraction = canvas.yview()
+
+        if y_root < canvas_top + 40 and top_fraction > 0:
+            canvas.yview_scroll(-1, "units")
+        elif y_root > canvas_bottom - 40 and bottom_fraction < 1:
+            canvas.yview_scroll(1, "units")
+
+    def target_index_from_pointer(self, y_root: int) -> int | None:
+        return self.reorder_target_from_pointer([task.id for task in self.tasks], self.task_rows, y_root)
+
+    def show_drop_indicator(self, target_index: int) -> None:
+        self.show_reorder_indicator(
+            self.drop_indicator,
+            self.list_frame,
+            [task.id for task in self.tasks],
+            self.task_rows,
+            target_index,
+            edge_pady=(4, 0),
+            leading_pady=(0, 4),
+            middle_pady=2,
+        )
 
     def hide_drop_indicator(self) -> None:
         if self.drop_indicator:
@@ -3044,24 +3277,7 @@ class TaskManagerApp:
             self.tint_widget_tree(child, bg)
 
     def auto_scroll(self, y_root: int) -> None:
-        scrollregion = self.canvas.bbox("all")
-        if not scrollregion:
-            return
-
-        content_height = scrollregion[3] - scrollregion[1]
-        canvas_height = self.canvas.winfo_height()
-        if content_height <= canvas_height:
-            self.canvas.yview_moveto(0)
-            return
-
-        canvas_top = self.canvas.winfo_rooty()
-        canvas_bottom = canvas_top + canvas_height
-        top_fraction, bottom_fraction = self.canvas.yview()
-
-        if y_root < canvas_top + 40 and top_fraction > 0:
-            self.canvas.yview_scroll(-1, "units")
-        elif y_root > canvas_bottom - 40 and bottom_fraction < 1:
-            self.canvas.yview_scroll(1, "units")
+        self.auto_scroll_canvas(self.canvas, y_root)
 
 
 def main() -> None:
