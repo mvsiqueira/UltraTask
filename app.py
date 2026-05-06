@@ -17,6 +17,7 @@ DEFAULT_DATA_FILE = APP_DIR / "tasks.json"
 SETTINGS_FILE = APP_DIR / "settings.json"
 APP_ICON_FILE = APP_DIR / "assets" / "app-icon.png"
 APP_ICON_ICO_FILE = APP_DIR / "assets" / "app-icon.ico"
+TOOLBOX_ICON_DIR = APP_DIR / "assets" / "toolbox"
 BUILD_TIMESTAMP = datetime.fromtimestamp(APP_DIR.joinpath("app.py").stat().st_mtime).strftime("%d/%m/%Y %H:%M")
 DEFAULT_TAG_COLOR = "#2563EB"
 DEFAULT_RESPONSIBLE_COLOR = "#0F766E"
@@ -26,6 +27,8 @@ PRIMARY_BUTTON_HOVER = "#1D4ED8"
 SECONDARY_BUTTON_BG = "#DBEAFE"
 SECONDARY_BUTTON_HOVER = "#BFDBFE"
 SECONDARY_BUTTON_FG = "#1E3A8A"
+TOOLBOX_BUTTON_BG = "#31506B"
+TOOLBOX_BUTTON_HOVER = "#3C6283"
 
 
 class NoteHTMLParser(HTMLParser):
@@ -192,6 +195,7 @@ class TaskManagerApp:
 
         self.responsible_filter_var = tk.StringVar(value="Todos")
         self.tag_filter_var = tk.StringVar(value="Todas")
+        self.important_filter_var = tk.StringVar(value="Todas")
         self.storage_status_var = tk.StringVar(value=self.storage_status_text())
 
         self.apply_app_icon()
@@ -271,119 +275,54 @@ class TaskManagerApp:
             self.app_icon_image = None
 
     def build_ui(self) -> None:
-        header = tk.Frame(self.root, bg="#1f2937", padx=24, pady=14)
+        header = tk.Frame(self.root, bg="#1f2937", padx=24, pady=10)
         header.pack(fill="x")
 
         header_top = tk.Frame(header, bg="#1f2937")
         header_top.pack(fill="x")
 
         title_block = tk.Frame(header_top, bg="#1f2937")
-        title_block.pack(side="left", fill="x", expand=True)
+        title_block.pack(side="left", fill="both", expand=True)
 
         self.header_title_block = title_block
         self.render_header_title()
 
-        header_actions = tk.Frame(header_top, bg="#1f2937")
-        header_actions.pack(side="right", anchor="ne")
+        header_meta = tk.Frame(header, bg="#1f2937")
+        header_meta.pack(fill="x", pady=(6, 0))
 
-        about_button = tk.Button(
-            header_actions,
-            text="?",
-            command=self.open_about_window,
-            font=("Segoe UI Semibold", 13),
-            relief="flat",
+        tk.Label(
+            header_meta,
+            text=f"Build: {BUILD_TIMESTAMP}",
+            font=("Segoe UI", 8),
             bg="#1f2937",
-            fg="white",
-            activebackground="#334155",
-            activeforeground="white",
-            bd=0,
-            width=2,
-            padx=8,
-            pady=4,
-            cursor="hand2",
-        )
-        about_button.pack(side="left")
-        self.bind_header_button_hover(about_button)
+            fg="#94a3b8",
+        ).pack(side="right")
 
-        settings_button = tk.Button(
-            header_actions,
-            text="⚙",
-            command=self.open_settings_window,
-            font=("Segoe UI Symbol", 14),
-            relief="flat",
-            bg="#1f2937",
-            fg="white",
-            activebackground="#334155",
-            activeforeground="white",
-            bd=0,
-            width=2,
-            padx=8,
-            pady=4,
-            cursor="hand2",
-        )
-        settings_button.pack(side="left", padx=(4, 0))
-        self.bind_header_button_hover(settings_button)
+        body_shell = tk.Frame(self.root, bg="#eef3f8")
+        body_shell.pack(fill="both", expand=True)
 
-        controls = tk.Frame(self.root, bg="#eef3f8", padx=24, pady=18)
+        toolbox = tk.Frame(
+            body_shell,
+            bg="#f8fbff",
+            highlightthickness=1,
+            highlightbackground="#d7e3f4",
+            width=56,
+        )
+        toolbox.pack(side="left", fill="y")
+        toolbox.pack_propagate(False)
+
+        content_area = tk.Frame(body_shell, bg="#eef3f8")
+        content_area.pack(side="left", fill="both", expand=True, padx=(24, 24), pady=(14, 12))
+
+        toolbox_inner = tk.Frame(toolbox, bg="#f8fbff", padx=6, pady=14)
+        toolbox_inner.pack(fill="both", expand=True)
+
+        controls = tk.Frame(content_area, bg="#eef3f8")
         controls.pack(fill="x")
-
-        add_button = tk.Button(
-            controls,
-            text="+ Tarefa",
-            command=self.add_task,
-            font=("Segoe UI Semibold", 10),
-            bg=PRIMARY_BUTTON_BG,
-            fg="white",
-            activebackground=PRIMARY_BUTTON_HOVER,
-            activeforeground="white",
-            relief="flat",
-            bd=0,
-            padx=12,
-            pady=8,
-            cursor="hand2",
-        )
-        add_button.pack(side="left")
-        self.bind_action_button_hover(add_button, PRIMARY_BUTTON_BG, PRIMARY_BUTTON_HOVER)
-
-        section_button = tk.Button(
-            controls,
-            text="+ Seção",
-            command=self.add_section,
-            font=("Segoe UI Semibold", 10),
-            relief="flat",
-            bg=PRIMARY_BUTTON_BG,
-            fg="white",
-            activebackground=PRIMARY_BUTTON_HOVER,
-            activeforeground="white",
-            bd=0,
-            padx=12,
-            pady=8,
-            cursor="hand2",
-        )
-        section_button.pack(side="left", padx=(10, 0))
-        self.bind_action_button_hover(section_button, PRIMARY_BUTTON_BG, PRIMARY_BUTTON_HOVER)
-
-        reload_button = tk.Button(
-            controls,
-            text="⟳ Recarregar",
-            command=self.reload_tasks_from_disk,
-            font=("Segoe UI Semibold", 10),
-            relief="flat",
-            bg=PRIMARY_BUTTON_BG,
-            fg="white",
-            activebackground=PRIMARY_BUTTON_HOVER,
-            activeforeground="white",
-            bd=0,
-            padx=12,
-            pady=8,
-            cursor="hand2",
-        )
-        reload_button.pack(side="left", padx=(12, 0))
-        self.bind_action_button_hover(reload_button, PRIMARY_BUTTON_BG, PRIMARY_BUTTON_HOVER)
 
         # Filter panel kept isolated in one block to make rollback easy if needed.
         filter_shell = tk.Frame(controls, bg="#eef3f8")
-        filter_shell.pack(side="right")
+        filter_shell.pack(fill="x")
 
         filter_panel = tk.Frame(
             filter_shell,
@@ -432,6 +371,33 @@ class TaskManagerApp:
 
         tk.Label(
             filter_panel,
+            text="Importância",
+            font=("Segoe UI", 9),
+            bg="#f8fbff",
+            fg="#334155",
+        ).pack(side="left", padx=(0, 6))
+
+        self.important_filter_menu = tk.OptionMenu(
+            filter_panel,
+            self.important_filter_var,
+            "Todas",
+            command=lambda _value: self.render_tasks(),
+        )
+        self.important_filter_menu.config(
+            font=("Segoe UI", 9),
+            relief="flat",
+            bg="white",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            activebackground="white",
+            width=9,
+            anchor="w",
+        )
+        self.important_filter_menu["menu"].config(font=("Segoe UI", 9))
+        self.important_filter_menu.pack(side="left", padx=(0, 12))
+
+        tk.Label(
+            filter_panel,
             text="Tag",
             font=("Segoe UI", 9),
             bg="#f8fbff",
@@ -474,8 +440,127 @@ class TaskManagerApp:
         ).pack(side="left", padx=(12, 0))
         self.refresh_filter_options()
 
-        container = tk.Frame(self.root, bg="#eef3f8", padx=24, pady=12)
-        container.pack(fill="both", expand=True)
+        toolbox_fallback_patterns = {
+            "add": [
+                "0001000",
+                "0001000",
+                "0001000",
+                "1111111",
+                "0001000",
+                "0001000",
+                "0001000",
+            ],
+            "section": [
+                "1111111",
+                "0000000",
+                "1111111",
+                "0000000",
+                "1111111",
+                "0000000",
+                "1111111",
+            ],
+            "reload": [
+                "0011110",
+                "0100001",
+                "1000111",
+                "1000100",
+                "1000100",
+                "0100001",
+                "0011100",
+            ],
+            "tags": [
+                "1111110",
+                "1000010",
+                "1111110",
+                "0010000",
+                "0111000",
+                "0010000",
+                "0000000",
+            ],
+            "settings": [
+                "0011100",
+                "0111110",
+                "1110111",
+                "1100011",
+                "1110111",
+                "0111110",
+                "0011100",
+            ],
+            "about": [
+                "0011100",
+                "0100010",
+                "0000010",
+                "0001100",
+                "0001000",
+                "0000000",
+                "0001000",
+            ],
+        }
+        self.toolbox_icons = {
+            icon_name: self.load_toolbox_icon(icon_name, fallback_pattern, TOOLBOX_BUTTON_BG)
+            for icon_name, fallback_pattern in toolbox_fallback_patterns.items()
+        }
+
+        for icon_key, tooltip_text, command in (
+            ("add", "Nova tarefa", self.add_task),
+            ("section", "Nova seção", self.add_section),
+            ("reload", "Recarregar", self.reload_tasks_from_disk),
+        ):
+            button_slot = tk.Frame(toolbox_inner, bg="#f8fbff", width=40, height=40)
+            button_slot.pack(pady=(0, 8))
+            button_slot.pack_propagate(False)
+
+            action_button = tk.Button(
+                button_slot,
+                image=self.toolbox_icons[icon_key],
+                command=command,
+                bg=TOOLBOX_BUTTON_BG,
+                fg="white",
+                activebackground=TOOLBOX_BUTTON_HOVER,
+                activeforeground="white",
+                relief="flat",
+                bd=0,
+                padx=0,
+                pady=0,
+                cursor="hand2",
+            )
+            action_button.pack(fill="both", expand=True)
+            self.bind_action_button_hover(action_button, TOOLBOX_BUTTON_BG, TOOLBOX_BUTTON_HOVER)
+            self.attach_tooltip(action_button, tooltip_text)
+
+        for index, (icon_key, tooltip_text, command) in enumerate((
+            ("tags", "Gerenciar tags", self.open_tag_manager),
+            ("settings", "Configurações", self.open_settings_window),
+            ("about", "Sobre", self.open_about_window),
+        )):
+            if index != 1:
+                separator = tk.Frame(toolbox_inner, bg="#d7e3f4", height=1)
+                separator.pack(fill="x", padx=2, pady=(2, 8))
+
+            button_slot = tk.Frame(toolbox_inner, bg="#f8fbff", width=40, height=40)
+            button_slot.pack(pady=(0, 8))
+            button_slot.pack_propagate(False)
+
+            action_button = tk.Button(
+                button_slot,
+                image=self.toolbox_icons[icon_key],
+                command=command,
+                bg=TOOLBOX_BUTTON_BG,
+                fg="white",
+                activebackground=TOOLBOX_BUTTON_HOVER,
+                activeforeground="white",
+                relief="flat",
+                bd=0,
+                padx=0,
+                pady=0,
+                cursor="hand2",
+            )
+            action_button.pack(fill="both", expand=True)
+            self.bind_action_button_hover(action_button, TOOLBOX_BUTTON_BG, TOOLBOX_BUTTON_HOVER)
+            self.attach_tooltip(action_button, tooltip_text)
+
+        container = tk.Frame(content_area, bg="#eef3f8")
+        container.pack(fill="both", expand=True, pady=(12, 0))
 
         self.canvas = tk.Canvas(
             container,
@@ -495,17 +580,6 @@ class TaskManagerApp:
         self.list_frame.bind("<Configure>", self.on_frame_configure)
         self.canvas.bind("<Configure>", self.on_canvas_configure)
         self.canvas.bind_all("<MouseWheel>", self.on_mousewheel)
-
-        app_footer = tk.Frame(self.root, bg="#eef3f8", padx=24)
-        app_footer.pack(fill="x", pady=(0, 10))
-
-        tk.Label(
-            app_footer,
-            text=f"Build: {BUILD_TIMESTAMP}",
-            font=("Segoe UI", 8),
-            bg="#eef3f8",
-            fg="#64748b",
-        ).pack(side="right")
 
     def bind_header_button_hover(self, button: tk.Button) -> None:
         def on_enter(_event) -> None:
@@ -539,6 +613,76 @@ class TaskManagerApp:
         button.bind("<Enter>", on_enter)
         button.bind("<Leave>", on_leave)
 
+    def attach_tooltip(self, widget: tk.Widget, text: str) -> None:
+        tooltip_window: tk.Toplevel | None = None
+
+        def show_tooltip(_event=None) -> None:
+            nonlocal tooltip_window
+            if tooltip_window is not None:
+                return
+
+            tooltip_window = tk.Toplevel(self.root)
+            tooltip_window.wm_overrideredirect(True)
+            tooltip_window.configure(bg="#0f172a")
+
+            label = tk.Label(
+                tooltip_window,
+                text=text,
+                font=("Segoe UI", 9),
+                bg="#0f172a",
+                fg="white",
+                padx=8,
+                pady=4,
+            )
+            label.pack()
+
+            x_root = widget.winfo_rootx() + widget.winfo_width() + 10
+            y_root = widget.winfo_rooty() + max((widget.winfo_height() // 2) - 12, 0)
+            tooltip_window.geometry(f"+{x_root}+{y_root}")
+
+        def hide_tooltip(_event=None) -> None:
+            nonlocal tooltip_window
+            if tooltip_window is not None:
+                tooltip_window.destroy()
+                tooltip_window = None
+
+        widget.bind("<Enter>", show_tooltip, add="+")
+        widget.bind("<Leave>", hide_tooltip, add="+")
+        widget.bind("<ButtonPress-1>", hide_tooltip, add="+")
+
+    def create_toolbox_icon(
+        self,
+        pattern: list[str],
+        background: str,
+        foreground: str = "white",
+        scale: int = 2,
+    ) -> tk.PhotoImage:
+        rows = len(pattern)
+        cols = max((len(row) for row in pattern), default=0)
+        image = tk.PhotoImage(width=cols * scale, height=rows * scale)
+        image.put(background, to=(0, 0, cols * scale, rows * scale))
+
+        for y, row in enumerate(pattern):
+            for x, cell in enumerate(row):
+                if cell == "1":
+                    image.put(
+                        foreground,
+                        to=(x * scale, y * scale, (x + 1) * scale, (y + 1) * scale),
+                    )
+        return image
+
+    def load_toolbox_icon(
+        self,
+        icon_name: str,
+        fallback_pattern: list[str],
+        background: str,
+        foreground: str = "white",
+    ) -> tk.PhotoImage:
+        icon_path = TOOLBOX_ICON_DIR / f"{icon_name}.png"
+        if icon_path.exists():
+            return tk.PhotoImage(file=str(icon_path))
+        return self.create_toolbox_icon(fallback_pattern, background, foreground)
+
     def render_header_title(self) -> None:
         for child in self.header_title_block.winfo_children():
             child.destroy()
@@ -557,7 +701,7 @@ class TaskManagerApp:
                 fg="white",
                 insertbackground="white",
             )
-            self.inline_file_title_entry.pack(anchor="w", fill="x", ipady=2)
+            self.inline_file_title_entry.pack(anchor="w", fill="x", ipady=2, pady=(4, 0))
             self.inline_file_title_entry.bind("<Return>", lambda _event: self.save_inline_file_title())
             self.inline_file_title_entry.bind("<Escape>", lambda _event: self.cancel_inline_file_title())
             self.inline_file_title_entry.bind("<FocusOut>", lambda _event: self.save_inline_file_title())
@@ -573,7 +717,7 @@ class TaskManagerApp:
             bg="#1f2937",
             cursor="xterm",
         )
-        self.app_title_label.pack(anchor="w")
+        self.app_title_label.pack(anchor="w", pady=(4, 0))
         self.app_title_label.bind("<Button-1>", lambda _event: self.edit_file_title())
 
     def on_frame_configure(self, _event=None) -> None:
@@ -1436,6 +1580,19 @@ class TaskManagerApp:
         if self.responsible_filter_var.get() not in responsible_options:
             self.responsible_filter_var.set("Todos")
 
+        important_menu = self.important_filter_menu["menu"]
+        important_menu.delete(0, "end")
+
+        important_options = ["Todas", "Importantes", "Não importantes"]
+        for option in important_options:
+            important_menu.add_command(
+                label=option,
+                command=lambda value=option: self.set_important_filter(value),
+            )
+
+        if self.important_filter_var.get() not in important_options:
+            self.important_filter_var.set("Todas")
+
         tag_menu = self.tag_filter_menu["menu"]
         tag_menu.delete(0, "end")
 
@@ -1460,6 +1617,10 @@ class TaskManagerApp:
         self.tag_filter_var.set(value)
         self.render_tasks()
 
+    def set_important_filter(self, value: str) -> None:
+        self.important_filter_var.set(value)
+        self.render_tasks()
+
     def apply_chip_filters(self, responsible: str | None = None, tag: str | None = None) -> None:
         if responsible is not None:
             self.responsible_filter_var.set(responsible)
@@ -1469,6 +1630,7 @@ class TaskManagerApp:
 
     def clear_filters(self) -> None:
         self.responsible_filter_var.set("Todos")
+        self.important_filter_var.set("Todas")
         self.tag_filter_var.set("Todas")
         self.render_tasks()
 
@@ -1507,8 +1669,9 @@ class TaskManagerApp:
 
     def filtered_tasks(self) -> list[Task]:
         selected_responsible = self.responsible_filter_var.get()
+        selected_important = self.important_filter_var.get()
         selected_tag = self.tag_filter_var.get()
-        if selected_responsible == "Todos" and selected_tag == "Todas":
+        if selected_responsible == "Todos" and selected_important == "Todas" and selected_tag == "Todas":
             return self.tasks
 
         visible: list[Task] = []
@@ -1523,6 +1686,12 @@ class TaskManagerApp:
                 continue
 
             if selected_responsible != "Todos" and task.responsible.strip().lower() != selected_responsible_key:
+                continue
+
+            if selected_important == "Importantes" and not task.important:
+                continue
+
+            if selected_important == "Não importantes" and task.important:
                 continue
 
             if selected_tag != "Todas" and selected_tag not in task.tags:
@@ -1770,10 +1939,58 @@ class TaskManagerApp:
 
         list_panel = tk.Frame(window, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
         list_panel.pack(fill="both", expand=True, padx=20, pady=16)
+        list_panel.grid_columnconfigure(0, weight=1)
+        list_panel.grid_rowconfigure(0, weight=1)
+
+        list_canvas = tk.Canvas(list_panel, bg="white", highlightthickness=0, bd=0, height=210)
+        list_scrollbar = tk.Scrollbar(
+            list_panel,
+            orient="vertical",
+            command=list_canvas.yview,
+            bg="#e2e8f0",
+            activebackground="#cbd5e1",
+            troughcolor="#f8fafc",
+            width=12,
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+        )
+        list_canvas.configure(yscrollcommand=list_scrollbar.set)
+        list_canvas.grid(row=0, column=0, sticky="nsew")
+        list_scrollbar.grid(row=0, column=1, sticky="ns")
 
         selected: dict[str, tk.BooleanVar] = {}
-        tags_container = tk.Frame(list_panel, bg="white")
-        tags_container.pack(fill="both", expand=True, padx=14, pady=14)
+        tags_container = tk.Frame(list_canvas, bg="white")
+        tags_container_window = list_canvas.create_window((0, 0), window=tags_container, anchor="nw")
+
+        def sync_task_tag_list_width(_event=None) -> None:
+            list_canvas.itemconfigure(tags_container_window, width=list_canvas.winfo_width())
+
+        def refresh_task_tag_scrollregion(_event=None) -> None:
+            list_canvas.configure(scrollregion=list_canvas.bbox("all"))
+
+        def task_tag_list_on_mousewheel(event) -> str | None:
+            scrollregion = list_canvas.bbox("all")
+            if not scrollregion:
+                return None
+
+            content_height = scrollregion[3] - scrollregion[1]
+            if content_height <= list_canvas.winfo_height():
+                return "break"
+
+            delta = int(-event.delta / 120)
+            if delta != 0:
+                list_canvas.yview_scroll(delta, "units")
+                return "break"
+            return None
+
+        def bind_task_tag_mousewheel(widget: tk.Widget) -> None:
+            widget.bind("<MouseWheel>", task_tag_list_on_mousewheel, add="+")
+
+        tags_container.bind("<Configure>", refresh_task_tag_scrollregion)
+        list_canvas.bind("<Configure>", sync_task_tag_list_width)
+        bind_task_tag_mousewheel(list_canvas)
+        bind_task_tag_mousewheel(tags_container)
 
         def render_tag_options() -> None:
             for child in tags_container.winfo_children():
@@ -1794,17 +2011,20 @@ class TaskManagerApp:
             for item in self.sorted_tag_catalog():
                 key = item["name"].lower()
                 row = tk.Frame(tags_container, bg="white")
-                row.pack(fill="x", pady=4)
+                row.pack(fill="x", padx=14, pady=4)
+                bind_task_tag_mousewheel(row)
 
                 var = tk.BooleanVar(value=key in current)
                 selected[key] = var
 
-                tk.Checkbutton(
+                checkbox = tk.Checkbutton(
                     row,
                     variable=var,
                     bg="white",
                     activebackground="white",
-                ).pack(side="left", padx=(0, 10))
+                )
+                checkbox.pack(side="left", padx=(0, 10))
+                bind_task_tag_mousewheel(checkbox)
 
                 chip = tk.Label(
                     row,
@@ -1818,6 +2038,7 @@ class TaskManagerApp:
                 )
                 chip.pack(side="left")
                 chip.bind("<Button-1>", lambda _event, value=var: value.set(not value.get()))
+                bind_task_tag_mousewheel(chip)
 
         render_tag_options()
 
@@ -2327,8 +2548,8 @@ class TaskManagerApp:
     def open_about_window(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Sobre")
-        window.geometry("420x205")
-        window.minsize(380, 190)
+        window.geometry("420x235")
+        window.minsize(380, 220)
         window.configure(bg="#eef3f8")
         window.transient(self.root)
         window.grab_set()
@@ -2351,6 +2572,14 @@ class TaskManagerApp:
             font=("Segoe UI", 10),
             bg="white",
             fg="#334155",
+        ).pack(anchor="w", padx=16, pady=(0, 10))
+
+        tk.Label(
+            panel,
+            text=f"Build: {BUILD_TIMESTAMP}",
+            font=("Segoe UI", 9),
+            bg="white",
+            fg="#64748b",
         ).pack(anchor="w", padx=16, pady=(0, 18))
 
         tk.Button(
@@ -3088,7 +3317,11 @@ class TaskManagerApp:
         self.bind_task_context_menu(row, task.id)
 
     def start_drag(self, event, task_id: str) -> None:
-        if self.tag_filter_var.get() != "Todas" or self.responsible_filter_var.get() != "Todos":
+        if (
+            self.tag_filter_var.get() != "Todas"
+            or self.responsible_filter_var.get() != "Todos"
+            or self.important_filter_var.get() != "Todas"
+        ):
             messagebox.showinfo(
                 "Reordenação desativada",
                 "Limpe os filtros para reorganizar a lista completa.",
