@@ -43,6 +43,9 @@ SECONDARY_BUTTON_HOVER = "#BFDBFE"
 SECONDARY_BUTTON_FG = "#1E3A8A"
 TOOLBOX_BUTTON_BG = "#31506B"
 TOOLBOX_BUTTON_HOVER = "#3C6283"
+CHECKBOX_UNCHECKED = "☐"
+CHECKBOX_CHECKED = "☒"
+LEGACY_CHECKBOX_CHECKED = "☑"
 
 # Notes are stored as lightweight HTML, then rebuilt into tk.Text tag ranges
 # so the editor can keep using native Tk formatting without a custom model.
@@ -52,27 +55,60 @@ class NoteHTMLParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.text_parts: list[str] = []
         self.spans: list[dict[str, Any]] = []
-        self.active_counts = {tag: 0 for tag in ("bold", "italic", "underline")}
+        self.active_counts = {tag: 0 for tag in ("bold", "italic", "underline", "strike")}
+        self.foreground_stack: list[str] = []
+        self.background_stack: list[str] = []
+        self.open_elements: list[dict[str, Any]] = []
         self.tag_map = {
             "b": "bold",
             "strong": "bold",
             "i": "italic",
             "em": "italic",
             "u": "underline",
+            "s": "strike",
+            "strike": "strike",
+            "del": "strike",
         }
 
     def current_offset(self) -> int:
         return len("".join(self.text_parts))
 
     def handle_starttag(self, tag: str, attrs) -> None:
+        changes = {"tags": [], "foreground": None, "background": None}
         mapped = self.tag_map.get(tag.lower())
         if mapped:
             self.active_counts[mapped] += 1
+            changes["tags"].append(mapped)
+        if tag.lower() == "span":
+            style_map = self.parse_style_map(attrs)
+            foreground = self.extract_html_color(style_map.get("color"))
+            if foreground:
+                self.foreground_stack.append(foreground)
+                changes["foreground"] = foreground
+            background = self.extract_html_color(style_map.get("background-color"))
+            if background:
+                self.background_stack.append(background)
+                changes["background"] = background
+            text_decoration = style_map.get("text-decoration", "").lower()
+            if "line-through" in text_decoration:
+                self.active_counts["strike"] += 1
+                changes["tags"].append("strike")
+            if "underline" in text_decoration:
+                self.active_counts["underline"] += 1
+                changes["tags"].append("underline")
+        self.open_elements.append(changes)
 
     def handle_endtag(self, tag: str) -> None:
-        mapped = self.tag_map.get(tag.lower())
-        if mapped and self.active_counts[mapped] > 0:
-            self.active_counts[mapped] -= 1
+        if not self.open_elements:
+            return
+        changes = self.open_elements.pop()
+        for mapped in reversed(changes["tags"]):
+            if self.active_counts.get(mapped, 0) > 0:
+                self.active_counts[mapped] -= 1
+        if changes["foreground"] and self.foreground_stack:
+            self.foreground_stack.pop()
+        if changes["background"] and self.background_stack:
+            self.background_stack.pop()
 
     def handle_startendtag(self, tag: str, attrs) -> None:
         if tag.lower() == "br":
@@ -87,6 +123,10 @@ class NoteHTMLParser(HTMLParser):
         for tag_name, count in self.active_counts.items():
             if count > 0:
                 self.spans.append({"tag": tag_name, "start": start, "end": end})
+        if self.foreground_stack:
+            self.spans.append({"tag": f"fg:{self.foreground_stack[-1]}", "start": start, "end": end})
+        if self.background_stack:
+            self.spans.append({"tag": f"bg:{self.background_stack[-1]}", "start": start, "end": end})
 
     def result(self) -> dict[str, Any] | None:
         text = "".join(self.text_parts)
@@ -106,6 +146,29 @@ class NoteHTMLParser(HTMLParser):
                 continue
             merged.append(dict(span))
         return merged
+
+    def parse_style_map(self, attrs) -> dict[str, str]:
+        for attr_name, attr_value in attrs:
+            if str(attr_name).lower() != "style":
+                continue
+            style_map: dict[str, str] = {}
+            for declaration in str(attr_value).split(";"):
+                if ":" not in declaration:
+                    continue
+                key, value = declaration.split(":", 1)
+                style_map[key.strip().lower()] = value.strip()
+            return style_map
+        return {}
+
+    def extract_html_color(self, value: str | None) -> str | None:
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        if len(cleaned) == 7 and cleaned.startswith("#"):
+            hex_part = cleaned[1:]
+            if all(char in "0123456789abcdefABCDEF" for char in hex_part):
+                return f"#{hex_part.upper()}"
+        return None
 
 
 # Centraliza o carregamento e a gravação das preferências locais do app.
@@ -1276,7 +1339,7 @@ class TaskManagerApp:
         task.due_date = str(result["value"])
         self.persist_and_refresh()
 
-    # Janela de edição de notas ricas com suporte a formatação simples.
+    # Janela de edição de notas ricas com suporte a estilos inline e cores.
     def open_notes_dialog(self, task_id: str) -> None:
         task = self.find_task(task_id)
         if not task or self.is_section(task):
@@ -1323,16 +1386,22 @@ class TaskManagerApp:
         self.configure_note_text_tags(text_box)
         self.load_task_notes_into_textbox(task, text_box)
 
-        for label, tag_name, shortcut in (
-            ("B", "bold", "Ctrl+B"),
-            ("I", "italic", "Ctrl+I"),
-            ("U", "underline", "Ctrl+U"),
+        for label, tag_name, shortcut, tooltip_text in (
+            ("N", "bold", "Ctrl+B", "Negrito"),
+            ("I", "italic", "Ctrl+I", "Itálico"),
+            ("S", "underline", "Ctrl+U", "Sublinhado"),
+            ("Ŧ", "strike", "Ctrl+Shift+X", "Tachado"),
         ):
-            tk.Button(
+            button_font = ("Segoe UI Semibold", 10)
+            if tag_name == "italic":
+                button_font = ("Segoe UI", 10, "italic")
+            elif tag_name == "underline":
+                button_font = ("Segoe UI", 10, "underline")
+            format_button = tk.Button(
                 toolbar,
                 text=label,
                 command=lambda name=tag_name: self.toggle_note_format(text_box, name),
-                font=("Segoe UI Semibold", 10),
+                font=button_font,
                 relief="flat",
                 bg=SECONDARY_BUTTON_BG,
                 fg=SECONDARY_BUTTON_FG,
@@ -1340,15 +1409,57 @@ class TaskManagerApp:
                 padx=12,
                 pady=6,
                 cursor="hand2",
-            ).pack(side="left", padx=(0, 8))
+            )
+            format_button.pack(side="left", padx=(0, 8))
+            self.attach_tooltip(format_button, f"{tooltip_text} ({shortcut})")
 
-            tk.Label(
-                toolbar,
-                text=shortcut,
-                font=("Segoe UI", 9),
-                bg="#eef3f8",
-                fg="#64748b",
-            ).pack(side="left", padx=(0, 14))
+        font_color_button = tk.Button(
+            toolbar,
+            text="Cor da fonte",
+            command=lambda: self.choose_note_color(text_box, "fg"),
+            font=("Segoe UI", 9),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=10,
+            pady=6,
+            cursor="hand2",
+        )
+        font_color_button.pack(side="left", padx=(0, 8))
+        self.attach_tooltip(font_color_button, "Cor da fonte")
+
+        background_color_button = tk.Button(
+            toolbar,
+            text="Cor de fundo",
+            command=lambda: self.choose_note_color(text_box, "bg"),
+            font=("Segoe UI", 9),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=10,
+            pady=6,
+            cursor="hand2",
+        )
+        background_color_button.pack(side="left", padx=(0, 8))
+        self.attach_tooltip(background_color_button, "Cor de fundo")
+
+        checklist_button = tk.Button(
+            toolbar,
+            text=CHECKBOX_CHECKED,
+            command=lambda: self.insert_checklist_item(text_box),
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=10,
+            pady=6,
+            cursor="hand2",
+        )
+        checklist_button.pack(side="left", padx=(0, 8))
+        self.attach_tooltip(checklist_button, "Inserir checklist")
 
         def save_notes() -> None:
             note_text = text_box.get("1.0", "end-1c")
@@ -1403,37 +1514,44 @@ class TaskManagerApp:
         window.bind("<Control-b>", lambda _event: self.handle_note_shortcut(text_box, "bold"))
         window.bind("<Control-i>", lambda _event: self.handle_note_shortcut(text_box, "italic"))
         window.bind("<Control-u>", lambda _event: self.handle_note_shortcut(text_box, "underline"))
+        window.bind("<Control-Shift-X>", lambda _event: self.handle_note_shortcut(text_box, "strike"))
+        text_box.bind("<Button-1>", lambda event: self.handle_note_checkbox_click(text_box, event), add="+")
+        text_box.bind("<Motion>", lambda event: self.update_note_checkbox_cursor(text_box, event), add="+")
+        text_box.bind("<Leave>", lambda _event: text_box.config(cursor="xterm"), add="+")
+        text_box.bind("<Return>", lambda event: self.handle_note_return(text_box, event), add="+")
         text_box.focus_set()
 
     # Conversão entre o editor Tk e o formato persistido das notas.
-    def note_tag_names(self) -> tuple[str, ...]:
-        return ("bold", "italic", "underline")
+    def note_tag_names(self, text_box: tk.Text | None = None) -> tuple[str, ...]:
+        static_tags = ("bold", "italic", "underline", "strike")
+        if text_box is None:
+            return static_tags
+        dynamic_tags = tuple(tag_name for tag_name in text_box.tag_names() if self.is_note_dynamic_tag(tag_name))
+        return static_tags + dynamic_tags
+
+    def is_note_dynamic_tag(self, tag_name: str) -> bool:
+        return tag_name.startswith("fg:") or tag_name.startswith("bg:")
+
+    def is_note_tag_name(self, tag_name: str) -> bool:
+        return tag_name in {"bold", "italic", "underline", "strike"} or self.is_note_dynamic_tag(tag_name)
 
     def configure_note_text_tags(self, text_box: tk.Text) -> None:
-        base_font = tkfont.Font(font=text_box.cget("font"))
-        bold_font = base_font.copy()
-        bold_font.configure(weight="bold")
-        italic_font = base_font.copy()
-        italic_font.configure(slant="italic")
-        underline_font = base_font.copy()
-        underline_font.configure(underline=1)
-
-        text_box.tag_configure("bold", font=bold_font)
-        text_box.tag_configure("italic", font=italic_font)
-        text_box.tag_configure("underline", font=underline_font)
+        text_box._note_base_font = tkfont.Font(font=text_box.cget("font"))
+        text_box._note_render_fonts = {}
 
     def load_task_notes_into_textbox(self, task: Task, text_box: tk.Text) -> None:
         payload = self.normalize_notes_rich_payload(task.notes_rich)
         if payload:
-            note_text = str(payload.get("text", ""))
+            note_text = self.normalize_checklist_symbols(str(payload.get("text", "")))
             text_box.insert("1.0", note_text)
             for span in payload.get("spans", []):
                 if not isinstance(span, dict):
                     continue
 
                 tag_name = str(span.get("tag", ""))
-                if tag_name not in self.note_tag_names():
+                if not self.is_note_tag_name(tag_name):
                     continue
+                self.ensure_note_style_tag(text_box, tag_name)
 
                 start = span.get("start")
                 end = span.get("end")
@@ -1441,10 +1559,11 @@ class TaskManagerApp:
                     continue
 
                 text_box.tag_add(tag_name, f"1.0+{start}c", f"1.0+{end}c")
+            self.refresh_note_rendering(text_box)
             return
 
         if task.notes:
-            text_box.insert("1.0", task.notes)
+            text_box.insert("1.0", self.normalize_checklist_symbols(task.notes))
 
     def normalize_notes_rich_payload(self, payload: Any) -> dict[str, Any] | None:
         if self.is_valid_rich_note_payload(payload):
@@ -1479,7 +1598,221 @@ class TaskManagerApp:
         else:
             text_box.tag_add(tag_name, start, end)
 
+        self.refresh_note_rendering(text_box)
         text_box.focus_set()
+
+    def choose_note_color(self, text_box: tk.Text, tag_prefix: str) -> None:
+        chosen = colorchooser.askcolor(parent=self.root, title="Escolher cor")[1]
+        if not chosen:
+            return
+        normalized = self.normalize_note_style_color(chosen)
+        if not normalized:
+            return
+        self.apply_note_value_tag(text_box, f"{tag_prefix}:{normalized}", tag_prefix)
+        text_box.focus_set()
+
+    def apply_note_value_tag(self, text_box: tk.Text, tag_name: str, tag_prefix: str) -> None:
+        try:
+            start = text_box.index("sel.first")
+            end = text_box.index("sel.last")
+        except tk.TclError:
+            return
+
+        for existing_tag in self.note_tag_names(text_box):
+            if existing_tag.startswith(f"{tag_prefix}:"):
+                text_box.tag_remove(existing_tag, start, end)
+
+        self.ensure_note_style_tag(text_box, tag_name)
+        text_box.tag_add(tag_name, start, end)
+        self.refresh_note_rendering(text_box)
+
+    # Comportamentos específicos da checklist embutida dentro do campo de notas.
+    def note_line_text(self, text_box: tk.Text, line_number: int) -> str:
+        return text_box.get(f"{line_number}.0", f"{line_number}.end")
+
+    def normalize_checklist_symbols(self, text: str) -> str:
+        return str(text).replace(LEGACY_CHECKBOX_CHECKED, CHECKBOX_CHECKED)
+
+    def checklist_line_state(self, line_text: str) -> str | None:
+        if line_text.startswith(f"{CHECKBOX_UNCHECKED} "):
+            return "unchecked"
+        if line_text.startswith(f"{CHECKBOX_CHECKED} "):
+            return "checked"
+        if line_text.startswith(f"{LEGACY_CHECKBOX_CHECKED} "):
+            return "checked"
+        return None
+
+    def insert_checklist_item(self, text_box: tk.Text) -> None:
+        insert_index = text_box.index("insert")
+        line_number = int(insert_index.split(".")[0])
+        line_text = self.note_line_text(text_box, line_number)
+        prefix = "" if not line_text else "\n"
+        text_box.insert(insert_index, f"{prefix}{CHECKBOX_UNCHECKED} ")
+        text_box.focus_set()
+
+    def checklist_content_range(self, line_number: int) -> tuple[str, str]:
+        return (f"{line_number}.2", f"{line_number}.end")
+
+    def set_checklist_line_state(self, text_box: tk.Text, line_number: int, checked: bool) -> None:
+        line_start = f"{line_number}.0"
+        current_line = self.note_line_text(text_box, line_number)
+        state = self.checklist_line_state(current_line)
+        if not state:
+            return
+
+        text_box.delete(line_start, f"{line_number}.1")
+        text_box.insert(line_start, CHECKBOX_CHECKED if checked else CHECKBOX_UNCHECKED)
+
+        content_start, content_end = self.checklist_content_range(line_number)
+        if checked:
+            text_box.tag_add("strike", content_start, content_end)
+        else:
+            text_box.tag_remove("strike", content_start, content_end)
+        self.refresh_note_rendering(text_box)
+
+    def toggle_checklist_line(self, text_box: tk.Text, line_number: int) -> None:
+        line_text = self.note_line_text(text_box, line_number)
+        state = self.checklist_line_state(line_text)
+        if state == "unchecked":
+            self.set_checklist_line_state(text_box, line_number, checked=True)
+        elif state == "checked":
+            self.set_checklist_line_state(text_box, line_number, checked=False)
+
+    def handle_note_checkbox_click(self, text_box: tk.Text, event) -> str | None:
+        index = text_box.index(f"@{event.x},{event.y}")
+        line_text = text_box.get(f"{index} linestart", f"{index} lineend")
+        if not self.checklist_line_state(line_text):
+            return None
+
+        column = int(index.split(".")[1])
+        if column > 1:
+            return None
+
+        line_number = int(index.split(".")[0])
+        self.toggle_checklist_line(text_box, line_number)
+        return "break"
+
+    def update_note_checkbox_cursor(self, text_box: tk.Text, event) -> None:
+        index = text_box.index(f"@{event.x},{event.y}")
+        line_text = text_box.get(f"{index} linestart", f"{index} lineend")
+        column = int(index.split(".")[1])
+        if self.checklist_line_state(line_text) and column <= 1:
+            text_box.config(cursor="hand2")
+        else:
+            text_box.config(cursor="xterm")
+
+    def handle_note_return(self, text_box: tk.Text, event) -> str | None:
+        insert_index = text_box.index("insert")
+        line_number = int(insert_index.split(".")[0])
+        line_text = self.note_line_text(text_box, line_number)
+        state = self.checklist_line_state(line_text)
+        if not state:
+            return None
+
+        content = line_text[2:].strip()
+        if not content:
+            text_box.delete(f"{line_number}.0", f"{line_number}.end")
+            return "break"
+
+        next_prefix = CHECKBOX_CHECKED if state == "checked" else CHECKBOX_UNCHECKED
+        text_box.insert("insert", f"\n{next_prefix} ")
+        return "break"
+
+    def normalize_note_style_color(self, value: str | None) -> str | None:
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        if len(cleaned) == 7 and cleaned.startswith("#"):
+            hex_part = cleaned[1:]
+            if all(char in "0123456789abcdefABCDEF" for char in hex_part):
+                return f"#{hex_part.upper()}"
+        return None
+
+    def ensure_note_style_tag(self, text_box: tk.Text, tag_name: str) -> None:
+        if tag_name in text_box.tag_names():
+            return
+        text_box.tag_configure(tag_name)
+
+    def note_render_tag_prefix(self) -> str:
+        return "__note_render__:"
+
+    def clear_note_render_tags(self, text_box: tk.Text) -> None:
+        render_prefix = self.note_render_tag_prefix()
+        for tag_name in tuple(text_box.tag_names()):
+            if tag_name.startswith(render_prefix):
+                text_box.tag_remove(tag_name, "1.0", "end")
+
+    def note_render_signature(self, active_tags: list[str]) -> str:
+        return "|".join(active_tags)
+
+    def ensure_note_render_tag(self, text_box: tk.Text, active_tags: list[str]) -> str | None:
+        if not active_tags:
+            return None
+
+        render_tag = f"{self.note_render_tag_prefix()}{self.note_render_signature(active_tags)}"
+        if render_tag in text_box.tag_names():
+            return render_tag
+
+        base_font = getattr(text_box, "_note_base_font", tkfont.Font(font=text_box.cget("font")))
+        render_font = base_font.copy()
+        if "bold" in active_tags:
+            render_font.configure(weight="bold")
+        if "italic" in active_tags:
+            render_font.configure(slant="italic")
+        if "underline" in active_tags:
+            render_font.configure(underline=1)
+        if "strike" in active_tags:
+            render_font.configure(overstrike=1)
+
+        foreground = None
+        background = None
+        for tag_name in active_tags:
+            if tag_name.startswith("fg:"):
+                foreground = self.normalize_note_style_color(tag_name[3:])
+            elif tag_name.startswith("bg:"):
+                background = self.normalize_note_style_color(tag_name[3:])
+
+        text_box._note_render_fonts[render_tag] = render_font
+        text_box.tag_configure(render_tag, font=render_font)
+        if foreground:
+            text_box.tag_configure(render_tag, foreground=foreground)
+        if background:
+            text_box.tag_configure(render_tag, background=background)
+        return render_tag
+
+    def refresh_note_rendering(self, text_box: tk.Text) -> None:
+        plain_text = text_box.get("1.0", "end-1c")
+        self.clear_note_render_tags(text_box)
+        if not plain_text:
+            return
+
+        note_tags = self.note_tag_names(text_box)
+        boundaries = {0, len(plain_text)}
+        for tag_name in note_tags:
+            ranges = text_box.tag_ranges(tag_name)
+            for index in range(0, len(ranges), 2):
+                start_offset = self.text_index_to_offset(text_box, str(ranges[index]))
+                end_offset = self.text_index_to_offset(text_box, str(ranges[index + 1]))
+                if end_offset > start_offset:
+                    boundaries.add(start_offset)
+                    boundaries.add(end_offset)
+
+        tag_priority = {"bold": 0, "italic": 1, "underline": 2, "strike": 3}
+        ordered_boundaries = sorted(boundaries)
+        for start_offset, end_offset in zip(ordered_boundaries, ordered_boundaries[1:]):
+            if end_offset <= start_offset:
+                continue
+            active_tags = sorted([
+                tag_name
+                for tag_name in note_tags
+                if text_box.tag_nextrange(tag_name, f"1.0+{start_offset}c", f"1.0+{end_offset}c")
+            ], key=lambda tag_name: (
+                tag_priority.get(tag_name, 4 if tag_name.startswith("fg:") else 5),
+                tag_name,
+            ))
+            render_tag = self.ensure_note_render_tag(text_box, active_tags)
+            if render_tag:
+                text_box.tag_add(render_tag, f"1.0+{start_offset}c", f"1.0+{end_offset}c")
 
     def handle_note_shortcut(self, text_box: tk.Text, tag_name: str) -> str:
         self.toggle_note_format(text_box, tag_name)
@@ -1487,8 +1820,9 @@ class TaskManagerApp:
 
     def clear_note_text(self, text_box: tk.Text) -> None:
         text_box.delete("1.0", "end")
-        for tag_name in self.note_tag_names():
+        for tag_name in self.note_tag_names(text_box):
             text_box.tag_remove(tag_name, "1.0", "end")
+        self.clear_note_render_tags(text_box)
 
     def serialize_note_text(self, text_box: tk.Text) -> str | None:
         plain_text = text_box.get("1.0", "end-1c")
@@ -1498,10 +1832,11 @@ class TaskManagerApp:
         # Tk formatting lives in independent tag ranges. We first split the text
         # into minimal segments where the active style set is stable, then emit
         # HTML by only opening/closing tags when that set actually changes.
-        intervals: dict[str, list[tuple[int, int]]] = {tag_name: [] for tag_name in self.note_tag_names()}
+        note_tags = self.note_tag_names(text_box)
+        intervals: dict[str, list[tuple[int, int]]] = {tag_name: [] for tag_name in note_tags}
         boundaries = {0, len(plain_text)}
 
-        for tag_name in self.note_tag_names():
+        for tag_name in note_tags:
             ranges = text_box.tag_ranges(tag_name)
             for index in range(0, len(ranges), 2):
                 start_index = str(ranges[index])
@@ -1513,7 +1848,7 @@ class TaskManagerApp:
                     boundaries.add(start_offset)
                     boundaries.add(end_offset)
 
-        tag_html = {"bold": "b", "italic": "i", "underline": "u"}
+        tag_priority = {"bold": 0, "italic": 1, "underline": 2, "strike": 3}
         ordered_boundaries = sorted(boundaries)
         html_parts: list[str] = []
         open_tags: list[str] = []
@@ -1525,11 +1860,14 @@ class TaskManagerApp:
             if not segment_text:
                 continue
 
-            active_tags = [
+            active_tags = sorted([
                 tag_name
-                for tag_name in self.note_tag_names()
+                for tag_name in note_tags
                 if any(start <= start_offset and end_offset <= end for start, end in intervals[tag_name])
-            ]
+            ], key=lambda tag_name: (
+                tag_priority.get(tag_name, 4 if tag_name.startswith("fg:") else 5),
+                tag_name,
+            ))
 
             shared_prefix = 0
             while (
@@ -1540,19 +1878,41 @@ class TaskManagerApp:
                 shared_prefix += 1
 
             for tag_name in reversed(open_tags[shared_prefix:]):
-                html_parts.append(f"</{tag_html[tag_name]}>")
+                _open_tag, close_tag = self.note_tag_to_html(tag_name)
+                html_parts.append(close_tag)
             open_tags = open_tags[:shared_prefix]
 
             for tag_name in active_tags[shared_prefix:]:
-                html_parts.append(f"<{tag_html[tag_name]}>")
+                open_tag, _close_tag = self.note_tag_to_html(tag_name)
+                html_parts.append(open_tag)
                 open_tags.append(tag_name)
 
             html_parts.append(escape(segment_text))
 
         for tag_name in reversed(open_tags):
-            html_parts.append(f"</{tag_html[tag_name]}>")
+            _open_tag, close_tag = self.note_tag_to_html(tag_name)
+            html_parts.append(close_tag)
 
         return "".join(html_parts)
+
+    def note_tag_to_html(self, tag_name: str) -> tuple[str, str]:
+        if tag_name == "bold":
+            return "<b>", "</b>"
+        if tag_name == "italic":
+            return "<i>", "</i>"
+        if tag_name == "underline":
+            return "<u>", "</u>"
+        if tag_name == "strike":
+            return "<s>", "</s>"
+        if tag_name.startswith("fg:"):
+            color = self.normalize_note_style_color(tag_name[3:])
+            if color:
+                return f'<span style="color:{color}">', "</span>"
+        if tag_name.startswith("bg:"):
+            color = self.normalize_note_style_color(tag_name[3:])
+            if color:
+                return f'<span style="background-color:{color}">', "</span>"
+        return "<span>", "</span>"
 
     def text_index_to_offset(self, text_box: tk.Text, text_index: str) -> int:
         return len(text_box.get("1.0", text_index))
