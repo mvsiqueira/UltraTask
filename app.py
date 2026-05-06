@@ -1,4 +1,5 @@
 import json
+import sys
 from dataclasses import dataclass, asdict, field
 from datetime import date, datetime
 from html import escape
@@ -18,7 +19,20 @@ SETTINGS_FILE = APP_DIR / "settings.json"
 APP_ICON_FILE = APP_DIR / "assets" / "app-icon.png"
 APP_ICON_ICO_FILE = APP_DIR / "assets" / "app-icon.ico"
 TOOLBOX_ICON_DIR = APP_DIR / "assets" / "toolbox"
-BUILD_TIMESTAMP = datetime.fromtimestamp(APP_DIR.joinpath("app.py").stat().st_mtime).strftime("%d/%m/%Y %H:%M")
+
+
+def resolve_build_timestamp() -> str:
+    source_file = APP_DIR / "app.py"
+    if source_file.exists():
+        target = source_file
+    elif getattr(sys, "frozen", False):
+        target = Path(sys.executable)
+    else:
+        target = APP_DIR
+    return datetime.fromtimestamp(target.stat().st_mtime).strftime("%d/%m/%Y %H:%M")
+
+
+BUILD_TIMESTAMP = resolve_build_timestamp()
 DEFAULT_TAG_COLOR = "#2563EB"
 DEFAULT_RESPONSIBLE_COLOR = "#0F766E"
 DEFAULT_SECTION_COLOR = "#B45309"
