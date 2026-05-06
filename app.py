@@ -1337,7 +1337,7 @@ class TaskManagerApp:
             return
 
         task.due_date = str(result["value"])
-        self.persist_and_refresh()
+        self.persist_and_refresh(preserve_scroll=True, refresh_filters=False, task_id=task_id)
 
     # Janela de edição de notas ricas com suporte a estilos inline e cores.
     def open_notes_dialog(self, task_id: str) -> None:
@@ -1466,7 +1466,7 @@ class TaskManagerApp:
             task.notes = note_text.strip()
             task.notes_rich = self.serialize_note_text(text_box)
             window.destroy()
-            self.persist_and_refresh()
+            self.persist_and_refresh(preserve_scroll=True, refresh_filters=False, task_id=task_id)
 
         tk.Button(
             footer,
@@ -1983,7 +1983,8 @@ class TaskManagerApp:
         )
 
     # Sincronização dos filtros e coleta de valores disponíveis no arquivo atual.
-    def refresh_filter_options(self) -> None:
+    def refresh_filter_options(self) -> bool:
+        selection_changed = False
         responsible_menu = self.responsible_filter_menu["menu"]
         responsible_menu.delete(0, "end")
 
@@ -1996,6 +1997,7 @@ class TaskManagerApp:
 
         if self.responsible_filter_var.get() not in responsible_options:
             self.responsible_filter_var.set("Todos")
+            selection_changed = True
 
         important_menu = self.important_filter_menu["menu"]
         important_menu.delete(0, "end")
@@ -2009,6 +2011,7 @@ class TaskManagerApp:
 
         if self.important_filter_var.get() not in important_options:
             self.important_filter_var.set("Todas")
+            selection_changed = True
 
         tag_menu = self.tag_filter_menu["menu"]
         tag_menu.delete(0, "end")
@@ -2025,6 +2028,9 @@ class TaskManagerApp:
 
         if self.tag_filter_var.get() not in tag_options:
             self.tag_filter_var.set("Todas")
+            selection_changed = True
+
+        return selection_changed
 
     def set_responsible_filter(self, value: str) -> None:
         self.responsible_filter_var.set(value)
@@ -2068,6 +2074,11 @@ class TaskManagerApp:
             if cleaned:
                 responsibles.setdefault(cleaned.lower(), cleaned)
         return set(responsibles.values())
+
+    def filter_options_signature(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        tag_names = tuple(item["name"] for item in self.sorted_tag_catalog())
+        responsibles = tuple(sorted(self.collect_responsibles(), key=str.lower))
+        return tag_names, responsibles
 
     def is_section(self, task: Task | None) -> bool:
         return bool(task and task.item_type == "section")
@@ -2245,7 +2256,7 @@ class TaskManagerApp:
         task = self.find_task(task_id)
         if task and not self.is_section(task):
             task.completed = completed
-            self.persist_and_refresh()
+            self.persist_and_refresh(preserve_scroll=True, refresh_filters=False, task_id=task_id)
 
     def toggle_task_important(self, task_id: str) -> None:
         task = self.find_task(task_id)
@@ -2253,17 +2264,28 @@ class TaskManagerApp:
             return
 
         task.important = not task.important
-        self.persist_and_refresh()
+        self.persist_and_refresh(
+            preserve_scroll=True,
+            refresh_filters=self.important_filter_var.get() != "Todas",
+            task_id=task_id,
+        )
 
     def edit_task_title(self, task_id: str) -> None:
         task = self.find_task(task_id)
         if not task:
             return
 
+        previous_task_id = self.editing_task_id
         self.inline_title_entry = None
         self.inline_title_var = None
         self.editing_task_id = task_id
-        self.render_tasks(preserve_scroll=True)
+        if self.filters_are_clear():
+            if previous_task_id and previous_task_id != task_id:
+                self.rebuild_single_task_row(previous_task_id)
+            if not self.rebuild_single_task_row(task_id):
+                self.render_tasks(preserve_scroll=True)
+        else:
+            self.render_tasks(preserve_scroll=True)
 
     def edit_file_title(self) -> None:
         self.editing_file_title = True
@@ -2310,15 +2332,18 @@ class TaskManagerApp:
         self.inline_title_var = None
         if cleaned != task.title:
             task.title = cleaned
-            self.persist_and_refresh(preserve_scroll=True)
+            self.persist_and_refresh(preserve_scroll=True, refresh_filters=False, task_id=task_id)
             return
 
         self.render_tasks(preserve_scroll=True)
 
     def cancel_inline_task_title(self) -> None:
+        current_task_id = self.editing_task_id
         self.editing_task_id = None
         self.inline_title_entry = None
         self.inline_title_var = None
+        if current_task_id and self.filters_are_clear() and self.rebuild_single_task_row(current_task_id):
+            return
         self.render_tasks(preserve_scroll=True)
 
     def edit_task_tags(self, task_id: str) -> None:
@@ -2529,6 +2554,7 @@ class TaskManagerApp:
             window.destroy()
             return
 
+        before_signature = self.filter_options_signature()
         task.tags = [
             item["name"]
             for item in self.sorted_tag_catalog()
@@ -2536,7 +2562,8 @@ class TaskManagerApp:
         ]
         task.tags = self.ordered_task_tags(task.tags)
         window.destroy()
-        self.persist_and_refresh()
+        refresh_filters = self.filter_options_signature() != before_signature
+        self.persist_and_refresh(preserve_scroll=True, refresh_filters=refresh_filters, task_id=task_id)
 
     def delete_task(self, task_id: str) -> None:
         task = self.find_task(task_id)
@@ -2587,8 +2614,10 @@ class TaskManagerApp:
         if answer is None:
             return
 
+        before_signature = self.filter_options_signature()
         task.responsible = answer.strip()
-        self.persist_and_refresh()
+        refresh_filters = self.filter_options_signature() != before_signature
+        self.persist_and_refresh(preserve_scroll=True, refresh_filters=refresh_filters, task_id=task_id)
 
     def set_section_color(self, task_id: str) -> None:
         task = self.find_task(task_id)
@@ -2604,7 +2633,7 @@ class TaskManagerApp:
             return
 
         task.section_color = self.normalize_color(chosen)
-        self.persist_and_refresh()
+        self.persist_and_refresh(preserve_scroll=True, refresh_filters=False, task_id=task_id)
 
     # Menus de contexto, persistência com refresh e janelas auxiliares do app.
     def show_task_context_menu(self, event, task_id: str) -> None:
@@ -2665,10 +2694,42 @@ class TaskManagerApp:
     def find_task(self, task_id: str) -> Task | None:
         return next((task for task in self.tasks if task.id == task_id), None)
 
-    def persist_and_refresh(self, preserve_scroll: bool = False) -> None:
+    def filters_are_clear(self) -> bool:
+        return (
+            self.responsible_filter_var.get() == "Todos"
+            and self.important_filter_var.get() == "Todas"
+            and self.tag_filter_var.get() == "Todas"
+        )
+
+    def rebuild_single_task_row(self, task_id: str) -> bool:
+        task = self.find_task(task_id)
+        old_row = self.task_rows.get(task_id)
+        if not task or not old_row or not old_row.winfo_exists():
+            return False
+
+        if self.drop_indicator and self.drop_indicator.winfo_exists():
+            self.drop_indicator.pack_forget()
+
+        if self.is_section(task):
+            self.create_section_row(task, before_widget=old_row)
+        else:
+            self.create_task_row(task, before_widget=old_row)
+        old_row.destroy()
+        return True
+
+    def persist_and_refresh(
+        self,
+        preserve_scroll: bool = False,
+        refresh_filters: bool = True,
+        task_id: str | None = None,
+    ) -> None:
         self.save_tasks()
         self.storage_status_var.set(self.storage_status_text())
-        self.refresh_filter_options()
+        selection_changed = False
+        if refresh_filters:
+            selection_changed = self.refresh_filter_options()
+        if task_id and not selection_changed and self.filters_are_clear() and self.rebuild_single_task_row(task_id):
+            return
         self.render_tasks(preserve_scroll=preserve_scroll)
 
     def reload_tasks_from_disk(self) -> None:
@@ -3500,9 +3561,9 @@ class TaskManagerApp:
         if preserve_scroll:
             self.restore_scroll_fraction(scroll_fraction)
 
-    def create_task_row(self, task: Task) -> None:
+    def create_task_row(self, task: Task, before_widget: tk.Widget | None = None) -> None:
         if self.is_section(task):
-            self.create_section_row(task)
+            self.create_section_row(task, before_widget=before_widget)
             return
 
         metrics = self.task_layout_metrics()
@@ -3516,7 +3577,10 @@ class TaskManagerApp:
             padx=metrics["row_padx"],
             pady=metrics["row_pady"],
         )
-        row.pack(fill="x", pady=metrics["row_pack_pady"])
+        pack_options = {"fill": "x", "pady": metrics["row_pack_pady"]}
+        if before_widget is not None and before_widget.winfo_exists():
+            pack_options["before"] = before_widget
+        row.pack(**pack_options)
         self.task_rows[task.id] = row
 
         grip = tk.Label(
@@ -3669,7 +3733,7 @@ class TaskManagerApp:
 
         self.bind_task_context_menu(row, task.id)
 
-    def create_section_row(self, task: Task) -> None:
+    def create_section_row(self, task: Task, before_widget: tk.Widget | None = None) -> None:
         metrics = self.task_layout_metrics()
         section_color = self.section_color(task)
         row = tk.Frame(
@@ -3679,7 +3743,10 @@ class TaskManagerApp:
             padx=metrics["row_padx"],
             pady=0,
         )
-        row.pack(fill="x", pady=(8, max(1, int(metrics["row_pack_pady"]))))
+        pack_options = {"fill": "x", "pady": (8, max(1, int(metrics["row_pack_pady"])))}
+        if before_widget is not None and before_widget.winfo_exists():
+            pack_options["before"] = before_widget
+        row.pack(**pack_options)
         self.task_rows[task.id] = row
 
         grip = tk.Label(
