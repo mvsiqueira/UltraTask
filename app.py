@@ -30,7 +30,9 @@ SECONDARY_BUTTON_FG = "#1E3A8A"
 TOOLBOX_BUTTON_BG = "#31506B"
 TOOLBOX_BUTTON_HOVER = "#3C6283"
 
-
+# Notes are stored as lightweight HTML, then rebuilt into tk.Text tag ranges
+# so the editor can keep using native Tk formatting without a custom model.
+# Converte o HTML simples das notas em texto puro + intervalos de formatação.
 class NoteHTMLParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -92,6 +94,7 @@ class NoteHTMLParser(HTMLParser):
         return merged
 
 
+# Centraliza o carregamento e a gravação das preferências locais do app.
 class AppSettings:
     def __init__(self) -> None:
         self.data = self.load()
@@ -110,6 +113,8 @@ class AppSettings:
     def tasks_path(self) -> Path | None:
         raw_path = self.data.get("tasks_file", "").strip()
         if not raw_path:
+            # Backward compatibility for older settings files that only stored
+            # the directory and assumed the standard tasks.json name.
             legacy_dir = self.data.get("storage_dir", "").strip()
             if not legacy_dir:
                 return None
@@ -149,8 +154,11 @@ class AppSettings:
         self.save()
 
 
+# Representa tanto tarefas normais quanto linhas de seção dentro da mesma lista.
 @dataclass
 class Task:
+    # Sections share the same list/persistence shape as normal tasks so grouping,
+    # filtering and reordering all operate on a single ordered collection.
     id: str
     title: str
     item_type: str = "task"
@@ -164,6 +172,7 @@ class Task:
     tags: list[str] = field(default_factory=list)
 
 
+# Reúne estado, persistência, interface e interações do aplicativo principal.
 class TaskManagerApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -179,6 +188,8 @@ class TaskManagerApp:
         self.file_title = self.load_file_title()
         self.tag_catalog = self.load_tag_catalog()
         self.tasks: list[Task] = self.load_tasks()
+        # Older files may know about tags only through tasks, while newer files
+        # also persist tag metadata such as color and display order.
         self.sync_tag_catalog_with_tasks()
         self.normalize_task_tags()
         self.save_tag_catalog()
@@ -204,6 +215,7 @@ class TaskManagerApp:
         self.render_tasks()
         self.root.bind_all("<Button-1>", self.handle_global_left_click, add="+")
 
+    # Informações básicas do arquivo atual e métricas visuais globais.
     def storage_status_text(self) -> str:
         return f"Arquivo de dados: {self.tasks_file}"
 
@@ -258,6 +270,7 @@ class TaskManagerApp:
             "action_pack_padx": 1,
         }
 
+    # Montagem da janela principal e dos recursos visuais compartilhados.
     def apply_app_icon(self) -> None:
         try:
             if APP_ICON_ICO_FILE.exists():
@@ -275,6 +288,7 @@ class TaskManagerApp:
             self.app_icon_image = None
 
     def build_ui(self) -> None:
+        # Cabeçalho principal com título do arquivo e informação de build.
         header = tk.Frame(self.root, bg="#1f2937", padx=24, pady=10)
         header.pack(fill="x")
 
@@ -298,6 +312,7 @@ class TaskManagerApp:
             fg="#94a3b8",
         ).pack(side="right")
 
+        # Corpo da aplicação dividido entre toolbox lateral e área de conteúdo.
         body_shell = tk.Frame(self.root, bg="#eef3f8")
         body_shell.pack(fill="both", expand=True)
 
@@ -317,10 +332,11 @@ class TaskManagerApp:
         toolbox_inner = tk.Frame(toolbox, bg="#f8fbff", padx=6, pady=14)
         toolbox_inner.pack(fill="both", expand=True)
 
+        # Faixa superior da área de conteúdo, hoje dedicada ao painel de filtros.
         controls = tk.Frame(content_area, bg="#eef3f8")
         controls.pack(fill="x")
 
-        # Filter panel kept isolated in one block to make rollback easy if needed.
+        # Painel compacto de filtros combinando responsável, importância e tag.
         filter_shell = tk.Frame(controls, bg="#eef3f8")
         filter_shell.pack(fill="x")
 
@@ -440,6 +456,8 @@ class TaskManagerApp:
         ).pack(side="left", padx=(12, 0))
         self.refresh_filter_options()
 
+        # Carrega os ícones finais da toolbox, com fallback para desenhos simples
+        # caso algum asset PNG não esteja disponível no ambiente local.
         toolbox_fallback_patterns = {
             "add": [
                 "0001000",
@@ -501,6 +519,7 @@ class TaskManagerApp:
             for icon_name, fallback_pattern in toolbox_fallback_patterns.items()
         }
 
+        # Grupo principal de ações rápidas da barra lateral.
         for icon_key, tooltip_text, command in (
             ("add", "Nova tarefa", self.add_task),
             ("section", "Nova seção", self.add_section),
@@ -528,6 +547,7 @@ class TaskManagerApp:
             self.bind_action_button_hover(action_button, TOOLBOX_BUTTON_BG, TOOLBOX_BUTTON_HOVER)
             self.attach_tooltip(action_button, tooltip_text)
 
+        # Grupo secundário de navegação/configuração da barra lateral.
         for index, (icon_key, tooltip_text, command) in enumerate((
             ("tags", "Gerenciar tags", self.open_tag_manager),
             ("settings", "Configurações", self.open_settings_window),
@@ -559,6 +579,7 @@ class TaskManagerApp:
             self.bind_action_button_hover(action_button, TOOLBOX_BUTTON_BG, TOOLBOX_BUTTON_HOVER)
             self.attach_tooltip(action_button, tooltip_text)
 
+        # Região rolável que hospeda a lista inteira de tarefas e seções.
         container = tk.Frame(content_area, bg="#eef3f8")
         container.pack(fill="both", expand=True, pady=(12, 0))
 
@@ -581,6 +602,7 @@ class TaskManagerApp:
         self.canvas.bind("<Configure>", self.on_canvas_configure)
         self.canvas.bind_all("<MouseWheel>", self.on_mousewheel)
 
+    # Helpers de UI para hover, tooltip e carregamento dos ícones da toolbox.
     def bind_header_button_hover(self, button: tk.Button) -> None:
         def on_enter(_event) -> None:
             button.configure(
@@ -720,6 +742,7 @@ class TaskManagerApp:
         self.app_title_label.pack(anchor="w", pady=(4, 0))
         self.app_title_label.bind("<Button-1>", lambda _event: self.edit_file_title())
 
+    # Comportamentos genéricos de rolagem, centralização e cliques globais.
     def on_frame_configure(self, _event=None) -> None:
         scrollregion = self.canvas.bbox("all")
         self.canvas.configure(scrollregion=scrollregion)
@@ -812,6 +835,7 @@ class TaskManagerApp:
                 return
             self.save_inline_file_title()
 
+    # Carregamento e manutenção do catálogo de tags com cor e ordem de exibição.
     def load_tag_catalog(self) -> dict[str, dict]:
         catalog: dict[str, dict] = {}
         source_items: list[dict] = []
@@ -875,6 +899,7 @@ class TaskManagerApp:
             if item is not None:
                 item["order"] = index
 
+    # Normalização e utilidades de tags/cores usadas em toda a interface.
     def move_tag_order(self, key: str, direction: int) -> bool:
         current_order = self.tag_order_keys()
         if key not in current_order:
@@ -890,6 +915,8 @@ class TaskManagerApp:
         return True
 
     def ordered_task_tags(self, tags: list[str]) -> list[str]:
+        # Tasks only store tag names; the catalog defines their canonical casing
+        # and order, so chips are projected through it before rendering.
         unique_tags: list[str] = []
         seen: set[str] = set()
         for tag in tags:
@@ -939,6 +966,8 @@ class TaskManagerApp:
         return cleaned
 
     def sync_tag_catalog_with_tasks(self) -> None:
+        # Any tag discovered only inside tasks is promoted into the catalog so it
+        # can participate in ordering, colors and the tag management UI.
         changed = False
         for task in self.tasks:
             if self.is_section(task):
@@ -960,6 +989,8 @@ class TaskManagerApp:
             self.save_tag_catalog()
 
     def normalize_task_tags(self) -> None:
+        # Normalization keeps imported/legacy data in one predictable shape
+        # before the rest of the UI starts applying task/section rules to it.
         changed = False
         for task in self.tasks:
             if task.item_type not in {"task", "section"}:
@@ -1081,6 +1112,7 @@ class TaskManagerApp:
         )
         return canvas
 
+    # Componentes visuais auxiliares e tratamento de data das tarefas.
     def parse_due_date(self, value: str) -> date | None:
         if not isinstance(value, str):
             return None
@@ -1230,6 +1262,7 @@ class TaskManagerApp:
         task.due_date = str(result["value"])
         self.persist_and_refresh()
 
+    # Janela de edição de notas ricas com suporte a formatação simples.
     def open_notes_dialog(self, task_id: str) -> None:
         task = self.find_task(task_id)
         if not task or self.is_section(task):
@@ -1358,6 +1391,7 @@ class TaskManagerApp:
         window.bind("<Control-u>", lambda _event: self.handle_note_shortcut(text_box, "underline"))
         text_box.focus_set()
 
+    # Conversão entre o editor Tk e o formato persistido das notas.
     def note_tag_names(self) -> tuple[str, ...]:
         return ("bold", "italic", "underline")
 
@@ -1447,6 +1481,9 @@ class TaskManagerApp:
         if not plain_text.strip():
             return None
 
+        # Tk formatting lives in independent tag ranges. We first split the text
+        # into minimal segments where the active style set is stable, then emit
+        # HTML by only opening/closing tags when that set actually changes.
         intervals: dict[str, list[tuple[int, int]]] = {tag_name: [] for tag_name in self.note_tag_names()}
         boundaries = {0, len(plain_text)}
 
@@ -1506,6 +1543,7 @@ class TaskManagerApp:
     def text_index_to_offset(self, text_box: tk.Text, text_index: str) -> int:
         return len(text_box.get("1.0", text_index))
 
+    # Persistência principal do arquivo de tarefas e do título exibido.
     def load_file_title(self) -> str:
         if not self.tasks_file.exists():
             return self.default_file_title()
@@ -1533,6 +1571,8 @@ class TaskManagerApp:
 
         try:
             data = json.loads(self.tasks_file.read_text(encoding="utf-8"))
+            # Accept both the current wrapped payload (title/tasks/tag_catalog)
+            # and the older plain-list format used by the first versions.
             if isinstance(data, list):
                 return [Task(**item) for item in data]
 
@@ -1553,6 +1593,8 @@ class TaskManagerApp:
     def save_tasks(self, tasks: list[Task] | None = None) -> None:
         current = tasks if tasks is not None else self.tasks
         self.tasks_file.parent.mkdir(parents=True, exist_ok=True)
+        # Keep all file-scoped metadata in one JSON so copying a task file is
+        # enough to move title, tasks and tag definitions together.
         payload = {
             "title": self.file_title.strip() or self.default_file_title(),
             "tasks": [asdict(task) for task in current],
@@ -1566,6 +1608,7 @@ class TaskManagerApp:
             encoding="utf-8",
         )
 
+    # Sincronização dos filtros e coleta de valores disponíveis no arquivo atual.
     def refresh_filter_options(self) -> None:
         responsible_menu = self.responsible_filter_menu["menu"]
         responsible_menu.delete(0, "end")
@@ -1674,6 +1717,8 @@ class TaskManagerApp:
         if selected_responsible == "Todos" and selected_important == "Todas" and selected_tag == "Todas":
             return self.tasks
 
+        # Sections are injected lazily: a title row only appears if at least one
+        # task inside that block survives the current filter combination.
         visible: list[Task] = []
         current_section: Task | None = None
         section_added = False
@@ -1704,6 +1749,7 @@ class TaskManagerApp:
 
         return visible
 
+    # Regras de filtragem e prompts usados para criar novos itens.
     def prompt_item_title(self, item_label: str, dialog_title: str) -> str | None:
         result: dict[str, str | None] = {"value": None}
 
@@ -1804,6 +1850,7 @@ class TaskManagerApp:
 
         return result["value"]
 
+    # Operações principais sobre tarefas e edição inline de títulos.
     def add_task(self) -> None:
         title = self.prompt_item_title("tarefa", "Nova tarefa")
         if title is None:
@@ -2088,6 +2135,7 @@ class TaskManagerApp:
             cursor="hand2",
         ).pack(side="right", padx=(0, 10))
 
+    # Associação de tags, duplicação/remoção e edição de metadados da tarefa.
     def normalize_tags(self, raw_tags: str) -> list[str]:
         seen: set[str] = set()
         normalized: list[str] = []
@@ -2184,6 +2232,7 @@ class TaskManagerApp:
         task.section_color = self.normalize_color(chosen)
         self.persist_and_refresh()
 
+    # Menus de contexto, persistência com refresh e janelas auxiliares do app.
     def show_task_context_menu(self, event, task_id: str) -> None:
         task = self.find_task(task_id)
         if not task:
@@ -2459,6 +2508,7 @@ class TaskManagerApp:
             cursor="hand2",
         ).pack(side="right", padx=(0, 10))
 
+    # Configurações gerais, tela Sobre e gerenciador de tags.
     def choose_tasks_file(self, file_path_var: tk.StringVar) -> None:
         current_path = Path(file_path_var.get()).expanduser() if file_path_var.get().strip() else self.tasks_file
         initial_dir = str(current_path.parent if current_path.parent.exists() else APP_DIR)
@@ -2608,6 +2658,8 @@ class TaskManagerApp:
         window.grid_columnconfigure(0, weight=1)
         window.grid_rowconfigure(0, weight=1)
 
+        # The manager updates its own list immediately, but the main screen is
+        # only refreshed on close so tag reordering stays responsive.
         if on_close is not None:
             def handle_close() -> None:
                 self.refresh_filter_options()
@@ -2639,7 +2691,7 @@ class TaskManagerApp:
 
         tk.Label(
             content,
-            text="Cadastre tags globais, escolha uma cor e reutilize essas tags nas tarefas.",
+            text="Cadastre tags, escolha uma cor e reutilize essas tags nas tarefas.",
             font=("Segoe UI", 10),
             bg="#eef3f8",
             fg="#475569",
@@ -2915,6 +2967,7 @@ class TaskManagerApp:
             cursor="hand2",
         ).pack(side="right", padx=(0, 10))
 
+    # CRUD de tags dentro do gerenciador e atualização do catálogo.
     def choose_tag_color(self, color_var: tk.StringVar, button: tk.Button) -> None:
         chosen = colorchooser.askcolor(color=color_var.get(), parent=self.root, title="Escolher cor da tag")[1]
         if not chosen:
@@ -3042,7 +3095,10 @@ class TaskManagerApp:
             self.render_tasks()
         refresh_callback()
 
+    # Renderização da lista principal e composição visual de tarefas e seções.
     def render_tasks(self, preserve_scroll: bool = False) -> None:
+        # Inline edits and filter changes rebuild the rows often; preserving the
+        # scroll fraction avoids snapping the user back to the top each time.
         scroll_fraction = self.current_scroll_fraction() if preserve_scroll else 0.0
         for child in self.list_frame.winfo_children():
             child.destroy()
@@ -3316,12 +3372,15 @@ class TaskManagerApp:
 
         self.bind_task_context_menu(row, task.id)
 
+    # Reordenação por drag-and-drop da lista principal de tarefas.
     def start_drag(self, event, task_id: str) -> None:
         if (
             self.tag_filter_var.get() != "Todas"
             or self.responsible_filter_var.get() != "Todos"
             or self.important_filter_var.get() != "Todas"
         ):
+            # Reordering a filtered subset is misleading because hidden rows in
+            # the full list would also shift position behind the scenes.
             messagebox.showinfo(
                 "Reordenação desativada",
                 "Limpe os filtros para reorganizar a lista completa.",
@@ -3380,6 +3439,8 @@ class TaskManagerApp:
         row_widgets: dict[str, tk.Widget],
         y_root: int,
     ) -> int | None:
+        # Convert the pointer Y coordinate into an insertion slot by comparing
+        # against each row midpoint; the result is "between rows", not "on row".
         self.root.update_idletasks()
         for index, key in enumerate(ordered_keys):
             row = row_widgets.get(key)
