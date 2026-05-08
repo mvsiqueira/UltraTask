@@ -1,28 +1,111 @@
 # Project Notes
 
-## Resumo
+## Visão geral
 
-UltraTask e um app desktop em Python + Tkinter para gerenciamento de tarefas com persistencia local.
+UltraTask é um app desktop em Python + Tkinter para gerenciamento local de tarefas.
+O foco atual do projeto é produtividade pessoal com interface compacta, boa densidade de informação e iteração rápida sobre UX.
 
-## Stack
+## Stack e execução
 
-- Python
-- Tkinter
-- tkcalendar
+- Linguagem: Python
+- UI: Tkinter
+- Dependências principais: `tkcalendar`, `PyInstaller`
+- Ambiente recomendado: `.venv` local
+- Dependências declaradas em `requirements.txt`
 
-## Fluxo atual
+## Arquivos importantes
 
-- As tarefas sao salvas em um arquivo JSON configuravel.
-- O app suporta tags, responsavel, data, importancia e notas.
-- As notas aceitam rich text basico: negrito, italico e sublinhado.
+- `app.py`: código principal do aplicativo
+- `settings.json`: preferências locais do app
+- `UltraTaskPortable.spec`: build portable via PyInstaller
+- `dist/UltraTaskPortable/`: saída do executável portable
 
-## Ambiente
+## Direção de produto
 
-- Recomenda-se usar `.venv` local.
-- Dependencias em `requirements.txt`.
+- A interface deve priorizar compactação visual.
+- A lista principal deve mostrar o maior número possível de tarefas sem sacrificar legibilidade.
+- Melhorias visuais são bem-vindas, mas não devem aumentar demais a altura útil das linhas da lista.
+- O app já usa seções manuais para agrupamento de tarefas.
+- Tags pertencem ao arquivo de tarefas atual, não são globais do aplicativo.
 
-## Proximos passos sugeridos
+## Convenções de desenvolvimento
 
-- Melhorar o rich text das notas com listas e links.
-- Revisar exportacao ou backup de tarefas.
-- Considerar empacotamento para `.exe`.
+- Comentários no código devem ser em pt-BR.
+- O padrão preferido é comentar por seções/blocos relevantes, explicando o papel do trecho sem poluir linha por linha.
+- Ao fazer alterações de UX, preservar o estilo já consolidado do app em vez de reinventar a interface a cada ajuste.
+- Quando uma ideia parecer arriscada, cara demais ou pouco útil, vale sinalizar isso antes de implementar.
+
+## Convenções de commit
+
+- Quando o usuário pedir commit, fazer push junto por padrão.
+- Antes de commitar, limpar arquivos temporários gerados durante o trabalho, como previews e snapshots locais, salvo pedido em contrário.
+- Evitar colocar em commit arquivos locais de uso pessoal ou artefatos transitórios.
+
+## Arquivos locais que normalmente não entram em commit
+
+- `BNDES.json`
+- `build/`
+- backups, previews e snapshots locais gerados durante a sessão
+- outros arquivos de uso local do usuário que não façam parte do código do app
+
+Observação:
+`dist/UltraTaskPortable/` pode entrar em commit quando o objetivo for versionar a build portable.
+
+## Estado atual das funcionalidades
+
+- Tarefas com:
+  - título
+  - responsável
+  - tags
+  - data
+  - importante
+  - notas
+- Seções manuais com cor personalizada
+- Filtros por:
+  - responsável
+  - importância
+  - tag
+- Botão para limpar filtros
+- Menu lateral compacto com ações principais
+- Tela de tags com ordenação manual
+- Notas com rich text
+- Checklist dentro do campo de notas
+- Build timestamp visível no app e compatível com versão portable
+
+## Notas sobre rich text
+
+- As notas ricas são persistidas em HTML normalizado.
+- O editor suporta:
+  - negrito
+  - itálico
+  - sublinhado
+  - tachado
+  - cor da fonte
+  - cor de fundo
+  - checklist embutida no próprio texto
+- A checklist convive com texto normal na mesma nota.
+
+## Notas sobre performance
+
+- Houve otimizações recentes para reduzir repaint completo da lista.
+- O app já tenta reaproveitar linhas e evitar rerender global em alterações pequenas.
+- Esse é um ponto sensível do projeto: mudanças nessa área devem ser testadas com atenção para evitar saltos de posição, piscadas e perda de scroll.
+
+## Empacotamento
+
+- O app gera uma versão portable com PyInstaller.
+- No modo portable, o cálculo do build deve usar o executável, não depender de `app.py` dentro do bundle.
+
+## Como retomar o projeto em outro computador
+
+1. Clonar o repositório
+2. Criar/ativar a `.venv`
+3. Instalar `requirements.txt`
+4. Ler este arquivo antes de continuar o desenvolvimento
+5. Rodar `app.py`
+
+## Próximos passos em aberto
+
+- Continuar refinando a performance visual da lista principal
+- Revisar a centralização vertical do título no header
+- Continuar polindo ícones e pequenos detalhes de interface quando isso trouxer ganho real de UX

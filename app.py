@@ -277,6 +277,8 @@ class TaskManagerApp:
         self.inline_file_title_var: tk.StringVar | None = None
         self.inline_file_title_entry: tk.Entry | None = None
         self.task_rows: dict[str, tk.Frame] = {}
+        self.task_row_types: dict[str, str] = {}
+        self.empty_state_label: tk.Label | None = None
         self.drag_data = {"task_id": None, "active": False, "target_index": None}
         self.drop_indicator: tk.Frame | None = None
         self.tag_drag_data = {"key": None, "active": False, "target_index": None}
@@ -437,6 +439,33 @@ class TaskManagerApp:
 
         tk.Label(
             filter_panel,
+            text="Tag",
+            font=("Segoe UI", 9),
+            bg="#f8fbff",
+            fg="#334155",
+        ).pack(side="left", padx=(0, 6))
+
+        self.tag_filter_menu = tk.OptionMenu(
+            filter_panel,
+            self.tag_filter_var,
+            "Todas",
+            command=lambda _value: self.render_tasks(),
+        )
+        self.tag_filter_menu.config(
+            font=("Segoe UI", 9),
+            relief="flat",
+            bg="white",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            activebackground="white",
+            width=8,
+            anchor="w",
+        )
+        self.tag_filter_menu["menu"].config(font=("Segoe UI", 9))
+        self.tag_filter_menu.pack(side="left", padx=(0, 12))
+
+        tk.Label(
+            filter_panel,
             text="Responsável",
             font=("Segoe UI", 9),
             bg="#f8fbff",
@@ -487,34 +516,7 @@ class TaskManagerApp:
             anchor="w",
         )
         self.important_filter_menu["menu"].config(font=("Segoe UI", 9))
-        self.important_filter_menu.pack(side="left", padx=(0, 12))
-
-        tk.Label(
-            filter_panel,
-            text="Tag",
-            font=("Segoe UI", 9),
-            bg="#f8fbff",
-            fg="#334155",
-        ).pack(side="left", padx=(0, 6))
-
-        self.tag_filter_menu = tk.OptionMenu(
-            filter_panel,
-            self.tag_filter_var,
-            "Todas",
-            command=lambda _value: self.render_tasks(),
-        )
-        self.tag_filter_menu.config(
-            font=("Segoe UI", 9),
-            relief="flat",
-            bg="white",
-            highlightthickness=1,
-            highlightbackground="#cbd5e1",
-            activebackground="white",
-            width=8,
-            anchor="w",
-        )
-        self.tag_filter_menu["menu"].config(font=("Segoe UI", 9))
-        self.tag_filter_menu.pack(side="left")
+        self.important_filter_menu.pack(side="left")
 
         tk.Button(
             filter_panel,
@@ -2701,7 +2703,25 @@ class TaskManagerApp:
             and self.tag_filter_var.get() == "Todas"
         )
 
-    def rebuild_single_task_row(self, task_id: str) -> bool:
+    def visible_task_ids(self) -> list[str]:
+        return [task.id for task in self.filtered_tasks()]
+
+    def task_row_type(self, task: Task | None) -> str:
+        return "section" if task and self.is_section(task) else "task"
+
+    def next_visible_row_widget(self, ordered_ids: list[str], task_id: str) -> tk.Widget | None:
+        try:
+            task_index = ordered_ids.index(task_id)
+        except ValueError:
+            return None
+
+        for next_id in ordered_ids[task_index + 1 :]:
+            candidate = self.task_rows.get(next_id)
+            if candidate and candidate.winfo_exists():
+                return candidate
+        return None
+
+    def rebuild_single_task_row(self, task_id: str, ordered_ids: list[str] | None = None) -> bool:
         task = self.find_task(task_id)
         old_row = self.task_rows.get(task_id)
         if not task or not old_row or not old_row.winfo_exists():
@@ -2710,11 +2730,12 @@ class TaskManagerApp:
         if self.drop_indicator and self.drop_indicator.winfo_exists():
             self.drop_indicator.pack_forget()
 
+        visible_order = ordered_ids or self.visible_task_ids()
+        before_widget = self.next_visible_row_widget(visible_order, task_id)
         if self.is_section(task):
-            self.create_section_row(task, before_widget=old_row)
+            self.create_section_row(task, before_widget=before_widget)
         else:
-            self.create_task_row(task, before_widget=old_row)
-        old_row.destroy()
+            self.create_task_row(task, before_widget=before_widget)
         return True
 
     def persist_and_refresh(
@@ -2722,13 +2743,22 @@ class TaskManagerApp:
         preserve_scroll: bool = False,
         refresh_filters: bool = True,
         task_id: str | None = None,
+        before_visible_ids: list[str] | None = None,
     ) -> None:
         self.save_tasks()
         self.storage_status_var.set(self.storage_status_text())
         selection_changed = False
         if refresh_filters:
             selection_changed = self.refresh_filter_options()
-        if task_id and not selection_changed and self.filters_are_clear() and self.rebuild_single_task_row(task_id):
+        same_visible_set = False
+        if before_visible_ids is not None:
+            same_visible_set = before_visible_ids == self.visible_task_ids()
+        if (
+            task_id
+            and not selection_changed
+            and (same_visible_set or self.filters_are_clear())
+            and self.rebuild_single_task_row(task_id, ordered_ids=before_visible_ids if same_visible_set else None)
+        ):
             return
         self.render_tasks(preserve_scroll=preserve_scroll)
 
@@ -2743,8 +2773,8 @@ class TaskManagerApp:
     def open_settings_window(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Configurações")
-        window.geometry("680x580")
-        window.minsize(620, 540)
+        window.geometry("680x460")
+        window.minsize(620, 440)
         window.configure(bg="#eef3f8")
         window.transient(self.root)
         window.grab_set()
@@ -2758,16 +2788,8 @@ class TaskManagerApp:
             fg="#0f172a",
         ).pack(anchor="w", padx=24, pady=(20, 8))
 
-        tk.Label(
-            window,
-            text="Escolha o arquivo onde as tarefas serão armazenadas.",
-            font=("Segoe UI", 10),
-            bg="#eef3f8",
-            fg="#475569",
-        ).pack(anchor="w", padx=24)
-
         panel = tk.Frame(window, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
-        panel.pack(fill="both", expand=True, padx=24, pady=(20, 12))
+        panel.pack(fill="both", expand=True, padx=24, pady=(16, 12))
 
         file_path_var = tk.StringVar(value=str(self.tasks_file))
         layout_var = tk.StringVar(value="Compacto" if self.layout_mode == "compact" else "Normal")
@@ -2877,39 +2899,6 @@ class TaskManagerApp:
             pady=8,
             cursor="hand2",
         ).pack(side="left", padx=(10, 0))
-
-        tk.Label(
-            panel,
-            text="Tags",
-            font=("Segoe UI Semibold", 10),
-            bg="white",
-            fg="#0f172a",
-        ).pack(anchor="w", padx=16, pady=(4, 8))
-
-        tags_row = tk.Frame(panel, bg="white")
-        tags_row.pack(fill="x", padx=16, pady=(0, 16))
-
-        tk.Label(
-            tags_row,
-            text="Abra o cadastro para criar, editar e reorganizar tags.",
-            font=("Segoe UI", 10),
-            bg="white",
-            fg="#475569",
-        ).pack(side="left")
-
-        tk.Button(
-            tags_row,
-            text="Gerenciar tags",
-            command=self.open_tag_manager,
-            font=("Segoe UI", 10),
-            relief="flat",
-            bg=SECONDARY_BUTTON_BG,
-            fg=SECONDARY_BUTTON_FG,
-            activebackground=SECONDARY_BUTTON_HOVER,
-            padx=12,
-            pady=8,
-            cursor="hand2",
-        ).pack(side="right")
 
         footer = tk.Frame(window, bg="#eef3f8")
         footer.pack(fill="x", padx=24, pady=(0, 24))
@@ -3532,16 +3521,38 @@ class TaskManagerApp:
 
     # Renderização da lista principal e composição visual de tarefas e seções.
     def render_tasks(self, preserve_scroll: bool = False) -> None:
-        # Inline edits and filter changes rebuild the rows often; preserving the
-        # scroll fraction avoids snapping the user back to the top each time.
+        # Edições inline e mudanças de filtro repintam a lista com frequência;
+        # preservar a fração do scroll evita saltos para o topo a cada atualização.
         scroll_fraction = self.current_scroll_fraction() if preserve_scroll else 0.0
-        for child in self.list_frame.winfo_children():
-            child.destroy()
-        self.task_rows.clear()
-        self.drop_indicator = tk.Frame(self.list_frame, bg="#2563eb", height=4)
-
         tasks = self.filtered_tasks()
+        visible_ids = {task.id for task in tasks}
+        visible_types = {task.id: self.task_row_type(task) for task in tasks}
+
+        if self.empty_state_label and self.empty_state_label.winfo_exists():
+            self.empty_state_label.destroy()
+        self.empty_state_label = None
+
+        if not self.drop_indicator or not self.drop_indicator.winfo_exists():
+            self.drop_indicator = tk.Frame(self.list_frame, bg="#2563eb", height=4)
+
+        # Mantém apenas as linhas ainda visíveis e compatíveis com o tipo atual.
+        for task_id, row in list(self.task_rows.items()):
+            if (
+                task_id not in visible_ids
+                or self.task_row_types.get(task_id) != visible_types.get(task_id)
+                or not row.winfo_exists()
+            ):
+                if row.winfo_exists():
+                    row.destroy()
+                self.task_rows.pop(task_id, None)
+                self.task_row_types.pop(task_id, None)
+
         if not tasks:
+            for row in list(self.task_rows.values()):
+                if row.winfo_exists():
+                    row.destroy()
+            self.task_rows.clear()
+            self.task_row_types.clear()
             empty = tk.Label(
                 self.list_frame,
                 text="Nenhuma tarefa encontrada para o filtro atual.",
@@ -3551,12 +3562,16 @@ class TaskManagerApp:
                 pady=32,
             )
             empty.pack(fill="x")
+            self.empty_state_label = empty
             if preserve_scroll:
                 self.restore_scroll_fraction(scroll_fraction)
             return
 
-        for task in tasks:
-            self.create_task_row(task)
+        # Reaproveita os frames das linhas e apenas os reempacota na ordem visível.
+        next_row: tk.Widget | None = None
+        for task in reversed(tasks):
+            self.create_task_row(task, before_widget=next_row)
+            next_row = self.task_rows.get(task.id)
 
         if preserve_scroll:
             self.restore_scroll_fraction(scroll_fraction)
@@ -3569,19 +3584,35 @@ class TaskManagerApp:
         metrics = self.task_layout_metrics()
         row_bg = "#FEE2E2" if task.important else "white"
         border_color = "#F87171" if task.important else "#dbe3ec"
-        row = tk.Frame(
-            self.list_frame,
-            bg=row_bg,
-            highlightthickness=1,
-            highlightbackground=border_color,
-            padx=metrics["row_padx"],
-            pady=metrics["row_pady"],
-        )
+        row = self.task_rows.get(task.id)
+        if row and row.winfo_exists() and self.task_row_types.get(task.id) == "task":
+            for child in row.winfo_children():
+                child.destroy()
+            row.configure(
+                bg=row_bg,
+                highlightthickness=1,
+                highlightbackground=border_color,
+                padx=metrics["row_padx"],
+                pady=metrics["row_pady"],
+            )
+        else:
+            if row and row.winfo_exists():
+                row.destroy()
+            row = tk.Frame(
+                self.list_frame,
+                bg=row_bg,
+                highlightthickness=1,
+                highlightbackground=border_color,
+                padx=metrics["row_padx"],
+                pady=metrics["row_pady"],
+            )
+            self.task_rows[task.id] = row
+            self.task_row_types[task.id] = "task"
         pack_options = {"fill": "x", "pady": metrics["row_pack_pady"]}
         if before_widget is not None and before_widget.winfo_exists():
             pack_options["before"] = before_widget
+        row.pack_forget()
         row.pack(**pack_options)
-        self.task_rows[task.id] = row
 
         grip = tk.Label(
             row,
@@ -3736,18 +3767,33 @@ class TaskManagerApp:
     def create_section_row(self, task: Task, before_widget: tk.Widget | None = None) -> None:
         metrics = self.task_layout_metrics()
         section_color = self.section_color(task)
-        row = tk.Frame(
-            self.list_frame,
-            bg="#eef3f8",
-            highlightthickness=0,
-            padx=metrics["row_padx"],
-            pady=0,
-        )
+        row = self.task_rows.get(task.id)
+        if row and row.winfo_exists() and self.task_row_types.get(task.id) == "section":
+            for child in row.winfo_children():
+                child.destroy()
+            row.configure(
+                bg="#eef3f8",
+                highlightthickness=0,
+                padx=metrics["row_padx"],
+                pady=0,
+            )
+        else:
+            if row and row.winfo_exists():
+                row.destroy()
+            row = tk.Frame(
+                self.list_frame,
+                bg="#eef3f8",
+                highlightthickness=0,
+                padx=metrics["row_padx"],
+                pady=0,
+            )
+            self.task_rows[task.id] = row
+            self.task_row_types[task.id] = "section"
         pack_options = {"fill": "x", "pady": (8, max(1, int(metrics["row_pack_pady"])))}
         if before_widget is not None and before_widget.winfo_exists():
             pack_options["before"] = before_widget
+        row.pack_forget()
         row.pack(**pack_options)
-        self.task_rows[task.id] = row
 
         grip = tk.Label(
             row,

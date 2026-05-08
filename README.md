@@ -1,19 +1,42 @@
 # UltraTask
 
-App desktop para Windows feito em Python + Tkinter.
+App desktop para Windows, feito em Python + Tkinter, voltado para gerenciamento local de tarefas com foco em interface compacta e fluxo rápido de organização.
 
 ## Recursos
 
-- Tarefas exibidas em linhas.
-- Reordenacao manual por arrastar e soltar.
-- Tags customizaveis por tarefa.
-- Filtro por tag.
-- Edicao, exclusao e marcacao de conclusao.
-- Notas por tarefa com rich text basico: negrito, italico e sublinhado.
-- Persistencia local em `tasks.json`.
-- Pasta de armazenamento configuravel, inclusive dentro do OneDrive local.
+- Lista principal compacta, com alta densidade de informação
+- Reordenação manual de tarefas por drag-and-drop
+- Seções manuais para agrupamento visual
+- Marcação de tarefa importante
+- Responsável por tarefa
+- Data de previsão por tarefa
+- Tags com cor personalizada
+- Gerenciador de tags com ordenação manual
+- Filtros por:
+  - responsável
+  - importância
+  - tag
+- Botão para limpar filtros
+- Notas por tarefa com rich text
+- Checklist embutida no campo de notas
+- Persistência local em arquivo JSON configurável
+- Geração de executável portable para Windows
 
-## Como executar
+## Rich text nas notas
+
+O editor de notas suporta:
+
+- negrito
+- itálico
+- sublinhado
+- tachado
+- cor da fonte
+- cor de fundo
+- checklist misturada com texto normal
+
+As notas ricas são persistidas em HTML normalizado.
+
+## Como executar em modo de desenvolvimento
 
 1. Instale o Python 3.13 ou superior no Windows.
 2. Abra um terminal na pasta do projeto.
@@ -29,7 +52,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-5. Instale as dependencias:
+5. Instale as dependências:
 
 ```powershell
 pip install -r requirements.txt
@@ -41,15 +64,40 @@ pip install -r requirements.txt
 python app.py
 ```
 
-## Configuracoes
+## Arquivos principais
 
-- Use o botao `Configuracoes` para abrir a janela de configuracoes.
-- Nessa janela, voce escolhe a pasta onde o `tasks.json` sera salvo.
-- Se selecionar uma pasta dentro do OneDrive instalado no Windows, a sincronizacao com a nuvem fica por conta do proprio OneDrive.
+- `app.py`: código principal do aplicativo
+- `settings.json`: preferências locais
+- `UltraTaskPortable.spec`: configuração da build portable
+- `dist/UltraTaskPortable/`: saída do executável portable
 
-## Observacoes
+## Configurações
 
-- A ordem das tarefas e as tags ficam salvas automaticamente.
-- A reordenacao funciona quando o filtro esta em `Todas`.
-- O botao `Recarregar` relê o arquivo configurado no disco.
-- O arquivo `settings.json` e o ambiente `.venv` nao entram no Git.
+Pela tela `Configurações`, é possível:
+
+- escolher o arquivo JSON onde as tarefas serão armazenadas
+- alternar o layout da lista
+- escolher a cor usada no chip de responsável
+- abrir o gerenciador de tags
+
+## Build portable
+
+O projeto pode ser empacotado com PyInstaller para gerar uma versão portable do app.
+
+Saída esperada:
+
+- `dist/UltraTaskPortable/UltraTaskPortable.exe`
+
+## Observações
+
+- A ordem das tarefas é salva automaticamente.
+- A reordenação da lista principal funciona apenas com os filtros limpos.
+- O botão `Recarregar` relê o arquivo configurado no disco.
+- Tags são específicas do arquivo de tarefas atual.
+- O arquivo de dados pode ficar em qualquer pasta acessível ao usuário, incluindo pastas sincronizadas pelo OneDrive.
+
+## Documentação interna
+
+- [PROJECT_NOTES.md](C:/Users/mvsiq/Downloads/apps/ultratask/PROJECT_NOTES.md): memória operacional do projeto
+
+Esse arquivo registra convenções de desenvolvimento, decisões de interface e contexto acumulado do app.
