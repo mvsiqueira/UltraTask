@@ -66,11 +66,21 @@ Observação:
   - importância
   - tag
 - Botão para limpar filtros
+- Links automáticos em títulos de tarefas por regex
 - Menu lateral compacto com ações principais
 - Tela de tags com ordenação manual
+- Tela de links automáticos
 - Notas com rich text
 - Checklist dentro do campo de notas
 - Build timestamp visível no app e compatível com versão portable
+
+## Notas sobre links automáticos
+
+- As regras ficam no `link_catalog` do arquivo de tarefas atual.
+- Cada regra possui nome, regex e template de URL.
+- O template aceita `{match}`, grupos numéricos como `{1}` e grupos nomeados como `{incidente}`.
+- Os valores inseridos no template são codificados para uso em URL.
+- Quando mais de uma regra casa o mesmo trecho, a primeira na ordem do catálogo prevalece.
 
 ## Notas sobre rich text
 

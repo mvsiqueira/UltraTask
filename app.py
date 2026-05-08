@@ -1,5 +1,7 @@
 import json
+import re
 import sys
+import webbrowser
 from dataclasses import dataclass, asdict, field
 from datetime import date, datetime
 from html import escape
@@ -8,6 +10,7 @@ from pathlib import Path
 import tkinter as tk
 import tkinter.font as tkfont
 from typing import Any
+from urllib.parse import quote
 from tkcalendar import Calendar
 from tkinter import colorchooser, filedialog, messagebox, simpledialog, ttk
 from uuid import uuid4
@@ -264,6 +267,7 @@ class TaskManagerApp:
         self.responsible_color = self.settings.responsible_color()
         self.file_title = self.load_file_title()
         self.tag_catalog = self.load_tag_catalog()
+        self.link_catalog = self.load_link_catalog()
         self.tasks: list[Task] = self.load_tasks()
         # Older files may know about tags only through tasks, while newer files
         # also persist tag metadata such as color and display order.
@@ -576,6 +580,15 @@ class TaskManagerApp:
                 "0010000",
                 "0000000",
             ],
+            "links": [
+                "0111000",
+                "1000100",
+                "0000100",
+                "0001000",
+                "0010000",
+                "0100010",
+                "0011100",
+            ],
             "settings": [
                 "0011100",
                 "0111110",
@@ -631,10 +644,11 @@ class TaskManagerApp:
         # Grupo secundário de navegação/configuração da barra lateral.
         for index, (icon_key, tooltip_text, command) in enumerate((
             ("tags", "Gerenciar tags", self.open_tag_manager),
+            ("links", "Gerenciar links", self.open_link_manager),
             ("settings", "Configurações", self.open_settings_window),
             ("about", "Sobre", self.open_about_window),
         )):
-            if index != 1:
+            if index != 1 and index != 2:
                 separator = tk.Frame(toolbox_inner, bg="#d7e3f4", height=1)
                 separator.pack(fill="x", padx=2, pady=(2, 8))
 
@@ -1120,6 +1134,161 @@ class TaskManagerApp:
         if not entry:
             return DEFAULT_TAG_COLOR
         return entry["color"]
+
+    # Catálogo de links automáticos por regex, salvo junto ao arquivo de tarefas.
+    def load_link_catalog(self) -> list[dict[str, Any]]:
+        if not self.tasks_file.exists():
+            return []
+
+        try:
+            raw_data = json.loads(self.tasks_file.read_text(encoding="utf-8"))
+            if not isinstance(raw_data, dict):
+                return []
+            raw_items = raw_data.get("link_catalog", [])
+            if not isinstance(raw_items, list):
+                return []
+        except json.JSONDecodeError:
+            return []
+
+        catalog: list[dict[str, Any]] = []
+        for index, item in enumerate(raw_items):
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            pattern = str(item.get("pattern", "")).strip()
+            url_template = str(item.get("url_template", "")).strip()
+            if not name or not pattern or not url_template:
+                continue
+            catalog.append({
+                "id": str(item.get("id") or uuid4()),
+                "name": name,
+                "pattern": pattern,
+                "url_template": url_template,
+                "order": int(item.get("order", index)),
+            })
+
+        return sorted(catalog, key=lambda item: (int(item.get("order", 0)), item["name"].lower()))
+
+    def save_link_catalog(self) -> None:
+        self.save_tasks()
+
+    def sorted_link_catalog(self) -> list[dict[str, Any]]:
+        return sorted(self.link_catalog, key=lambda item: (int(item.get("order", 0)), item["name"].lower()))
+
+    def next_link_order(self) -> int:
+        if not self.link_catalog:
+            return 0
+        return max(int(item.get("order", index)) for index, item in enumerate(self.link_catalog)) + 1
+
+    def reindex_link_catalog(self) -> None:
+        for index, item in enumerate(self.sorted_link_catalog()):
+            item["order"] = index
+
+    def validate_link_pattern(self, pattern: str) -> str | None:
+        cleaned = pattern.strip()
+        if not cleaned:
+            return "Informe uma expressão regular."
+        try:
+            compiled = re.compile(cleaned)
+        except re.error as exc:
+            return f"Regex inválido: {exc}"
+        if compiled.match("") is not None:
+            return "A regex não pode casar texto vazio."
+        return None
+
+    def validate_link_template(self, url_template: str) -> str | None:
+        cleaned = url_template.strip()
+        if not cleaned:
+            return "Informe um template de URL."
+        if "{match}" not in cleaned and not re.search(r"\{(?:\d+|[A-Za-z_]\w*)\}", cleaned):
+            return "Use ao menos um marcador, como {match}, {1} ou {nome}."
+        return None
+
+    def link_url_for_match(self, rule: dict[str, Any], match: re.Match[str]) -> str:
+        template = str(rule.get("url_template", ""))
+
+        def replace_marker(marker_match: re.Match[str]) -> str:
+            key = marker_match.group(1)
+            if key == "match":
+                return quote(match.group(0), safe="")
+            if key.isdigit():
+                try:
+                    value = match.group(int(key))
+                except IndexError:
+                    value = ""
+                return quote(value or "", safe="")
+            value = match.groupdict().get(key, "")
+            return quote(value or "", safe="")
+
+        return re.sub(r"\{(match|\d+|[A-Za-z_]\w*)\}", replace_marker, template)
+
+    def title_link_segments(self, text: str) -> list[dict[str, str | None]]:
+        rules: list[tuple[dict[str, Any], re.Pattern[str]]] = []
+        for rule in self.sorted_link_catalog():
+            if self.validate_link_pattern(str(rule.get("pattern", ""))):
+                continue
+            rules.append((rule, re.compile(str(rule["pattern"]))))
+
+        if not rules:
+            return [{"text": text, "url": None}]
+
+        segments: list[dict[str, str | None]] = []
+        position = 0
+        while position < len(text):
+            next_match: tuple[int, int, dict[str, Any], re.Match[str]] | None = None
+            for rule_index, (rule, pattern) in enumerate(rules):
+                match = pattern.search(text, position)
+                if not match or match.start() == match.end():
+                    continue
+                candidate = (match.start(), rule_index, rule, match)
+                if next_match is None or candidate[0] < next_match[0] or (
+                    candidate[0] == next_match[0] and candidate[1] < next_match[1]
+                ):
+                    next_match = candidate
+
+            if next_match is None:
+                segments.append({"text": text[position:], "url": None})
+                break
+
+            start, _rule_index, rule, match = next_match
+            if start > position:
+                segments.append({"text": text[position:start], "url": None})
+            segments.append({"text": match.group(0), "url": self.link_url_for_match(rule, match)})
+            position = match.end()
+
+        return segments or [{"text": text, "url": None}]
+
+    def open_task_link(self, url: str) -> None:
+        if url:
+            webbrowser.open(url)
+
+    def render_task_title_segments(
+        self,
+        parent: tk.Widget,
+        task: Task,
+        title_font: tkfont.Font,
+        title_color: str,
+        row_bg: str,
+    ) -> None:
+        for segment in self.title_link_segments(task.title):
+            text = segment["text"] or ""
+            url = segment["url"]
+            if not text:
+                continue
+            label = tk.Label(
+                parent,
+                text=text,
+                font=title_font,
+                fg="#1D4ED8" if url else title_color,
+                bg=row_bg,
+                anchor="w",
+                cursor="hand2" if url else "xterm",
+            )
+            label.pack(side="left")
+            if url:
+                label.bind("<Button-1>", lambda _event, value=url: self.open_task_link(value))
+            else:
+                label.bind("<Button-1>", lambda _event, tid=task.id: self.edit_task_title(tid))
 
     def contrast_text_color(self, background: str) -> str:
         color = self.normalize_color(background)
@@ -1980,6 +2149,16 @@ class TaskManagerApp:
                 {"name": item["name"], "color": item["color"], "order": int(item.get("order", 0))}
                 for item in self.sorted_tag_catalog()
             ],
+            "link_catalog": [
+                {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "pattern": item["pattern"],
+                    "url_template": item["url_template"],
+                    "order": int(item.get("order", 0)),
+                }
+                for item in self.sorted_link_catalog()
+            ],
         }
         self.tasks_file.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
@@ -2764,6 +2943,7 @@ class TaskManagerApp:
 
     def reload_tasks_from_disk(self) -> None:
         self.tasks = self.load_tasks()
+        self.link_catalog = self.load_link_catalog()
         self.sync_tag_catalog_with_tasks()
         self.normalize_task_tags()
         self.storage_status_var.set(self.storage_status_text())
@@ -2997,12 +3177,14 @@ class TaskManagerApp:
             self.file_title = self.default_file_title()
             self.tasks = []
             self.tag_catalog = {}
+            self.link_catalog = []
             self.save_tasks([])
         else:
             self.tasks_file = new_file
             self.settings.set_tasks_path(str(new_file))
             self.file_title = self.load_file_title()
             self.tag_catalog = self.load_tag_catalog()
+            self.link_catalog = self.load_link_catalog()
             self.tasks = self.load_tasks()
             self.sync_tag_catalog_with_tasks()
             self.normalize_task_tags()
@@ -3391,6 +3573,352 @@ class TaskManagerApp:
             cursor="hand2",
         ).pack(side="right", padx=(0, 10))
 
+    def open_link_manager(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Gerenciar links")
+        window.geometry("720x560")
+        window.minsize(640, 520)
+        window.configure(bg="#eef3f8")
+        window.transient(self.root)
+        window.grab_set()
+        self.center_window(window)
+        window.grid_columnconfigure(0, weight=1)
+        window.grid_rowconfigure(0, weight=1)
+
+        def handle_close() -> None:
+            self.render_tasks(preserve_scroll=True)
+            window.destroy()
+
+        window.protocol("WM_DELETE_WINDOW", handle_close)
+
+        content = tk.Frame(window, bg="#eef3f8")
+        content.grid(row=0, column=0, sticky="nsew")
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_rowconfigure(3, weight=1)
+
+        tk.Label(
+            content,
+            text="Cadastro de links",
+            font=("Segoe UI Semibold", 18),
+            bg="#eef3f8",
+            fg="#0f172a",
+        ).grid(row=0, column=0, sticky="w", padx=24, pady=(20, 8))
+
+        tk.Label(
+            content,
+            text="Cadastre expressões regulares e templates de URL. Use {match}, {1} ou {nome} no template.",
+            font=("Segoe UI", 10),
+            bg="#eef3f8",
+            fg="#475569",
+        ).grid(row=1, column=0, sticky="w", padx=24)
+
+        form = tk.Frame(content, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
+        form.grid(row=2, column=0, sticky="ew", padx=24, pady=18)
+        form.grid_columnconfigure(1, weight=1)
+
+        name_var = tk.StringVar()
+        pattern_var = tk.StringVar(value=r"INC\d+")
+        url_var = tk.StringVar()
+
+        for row_index, (label_text, variable) in enumerate((
+            ("Nome", name_var),
+            ("Regex", pattern_var),
+            ("URL", url_var),
+        )):
+            tk.Label(
+                form,
+                text=label_text,
+                font=("Segoe UI Semibold", 10),
+                bg="white",
+                fg="#0f172a",
+            ).grid(row=row_index, column=0, sticky="w", padx=(16, 10), pady=(12 if row_index == 0 else 6, 6))
+
+            tk.Entry(
+                form,
+                textvariable=variable,
+                font=("Consolas" if label_text != "Nome" else "Segoe UI", 10),
+                relief="flat",
+                highlightthickness=1,
+                highlightbackground="#cbd5e1",
+                highlightcolor="#2563eb",
+            ).grid(row=row_index, column=1, sticky="ew", padx=(0, 16), pady=(12 if row_index == 0 else 6, 6), ipady=7)
+
+        list_panel = tk.Frame(content, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
+        list_panel.grid(row=3, column=0, sticky="nsew", padx=24, pady=(0, 16))
+        list_panel.grid_columnconfigure(0, weight=1)
+        list_panel.grid_rowconfigure(0, weight=1)
+
+        list_canvas = tk.Canvas(list_panel, bg="white", highlightthickness=0, bd=0, height=220)
+        list_scrollbar = ttk.Scrollbar(list_panel, orient="vertical", command=list_canvas.yview)
+        list_canvas.configure(yscrollcommand=list_scrollbar.set)
+        list_canvas.grid(row=0, column=0, sticky="nsew")
+        list_scrollbar.grid(row=0, column=1, sticky="ns")
+
+        list_body = tk.Frame(list_canvas, bg="white")
+        list_body_window = list_canvas.create_window((0, 0), window=list_body, anchor="nw")
+
+        def sync_link_list_width(_event=None) -> None:
+            list_canvas.itemconfigure(list_body_window, width=list_canvas.winfo_width())
+
+        def refresh_link_list_scrollregion(_event=None) -> None:
+            list_canvas.configure(scrollregion=list_canvas.bbox("all"))
+
+        def refresh_links() -> None:
+            for child in list_body.winfo_children():
+                child.destroy()
+
+            if not self.link_catalog:
+                tk.Label(
+                    list_body,
+                    text="Nenhum link cadastrado ainda.",
+                    font=("Segoe UI", 10),
+                    bg="white",
+                    fg="#64748b",
+                ).pack(anchor="w", padx=16, pady=16)
+                return
+
+            for item in self.sorted_link_catalog():
+                row = tk.Frame(list_body, bg="white")
+                row.pack(fill="x", padx=12, pady=4)
+
+                text_block = tk.Frame(row, bg="white")
+                text_block.pack(side="left", fill="x", expand=True)
+
+                tk.Label(
+                    text_block,
+                    text=item["name"],
+                    font=("Segoe UI Semibold", 10),
+                    bg="white",
+                    fg="#0f172a",
+                ).pack(anchor="w")
+
+                tk.Label(
+                    text_block,
+                    text=f'{item["pattern"]} -> {item["url_template"]}',
+                    font=("Consolas", 9),
+                    bg="white",
+                    fg="#475569",
+                    wraplength=460,
+                    justify="left",
+                ).pack(anchor="w", pady=(2, 0))
+
+                tk.Button(
+                    row,
+                    text="Excluir",
+                    command=lambda link_id=item["id"]: self.delete_link_rule(link_id, refresh_links),
+                    font=("Segoe UI", 9),
+                    relief="flat",
+                    bg=SECONDARY_BUTTON_BG,
+                    fg=SECONDARY_BUTTON_FG,
+                    activebackground=SECONDARY_BUTTON_HOVER,
+                    padx=10,
+                    pady=6,
+                    cursor="hand2",
+                ).pack(side="right")
+
+                tk.Button(
+                    row,
+                    text="Editar",
+                    command=lambda link_id=item["id"]: self.edit_link_rule(link_id, refresh_links),
+                    font=("Segoe UI", 9),
+                    relief="flat",
+                    bg=SECONDARY_BUTTON_BG,
+                    fg=SECONDARY_BUTTON_FG,
+                    activebackground=SECONDARY_BUTTON_HOVER,
+                    padx=10,
+                    pady=6,
+                    cursor="hand2",
+                ).pack(side="right", padx=(0, 8))
+
+        list_body.bind("<Configure>", refresh_link_list_scrollregion)
+        list_canvas.bind("<Configure>", sync_link_list_width)
+        refresh_links()
+
+        footer = tk.Frame(content, bg="#eef3f8")
+        footer.grid(row=4, column=0, sticky="ew", padx=24, pady=(0, 20))
+
+        tk.Button(
+            footer,
+            text="Adicionar link",
+            command=lambda: self.create_link_rule(name_var, pattern_var, url_var, refresh_links),
+            font=("Segoe UI Semibold", 10),
+            relief="flat",
+            bg=PRIMARY_BUTTON_BG,
+            fg="white",
+            activebackground=PRIMARY_BUTTON_HOVER,
+            activeforeground="white",
+            padx=14,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="right")
+
+        tk.Button(
+            footer,
+            text="Fechar",
+            command=handle_close,
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=14,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="right", padx=(0, 10))
+
+    # CRUD de links automáticos dentro do gerenciador.
+    def create_link_rule(
+        self,
+        name_var: tk.StringVar,
+        pattern_var: tk.StringVar,
+        url_var: tk.StringVar,
+        refresh_callback,
+    ) -> None:
+        name = name_var.get().strip()
+        pattern = pattern_var.get().strip()
+        url_template = url_var.get().strip()
+        if not name:
+            messagebox.showinfo("Links", "Digite um nome para o link.")
+            return
+
+        pattern_error = self.validate_link_pattern(pattern)
+        if pattern_error:
+            messagebox.showinfo("Links", pattern_error)
+            return
+
+        template_error = self.validate_link_template(url_template)
+        if template_error:
+            messagebox.showinfo("Links", template_error)
+            return
+
+        self.link_catalog.append({
+            "id": str(uuid4()),
+            "name": name,
+            "pattern": pattern,
+            "url_template": url_template,
+            "order": self.next_link_order(),
+        })
+        self.save_link_catalog()
+        name_var.set("")
+        url_var.set("")
+        refresh_callback()
+        self.render_tasks(preserve_scroll=True)
+
+    def edit_link_rule(self, link_id: str, refresh_callback) -> None:
+        item = next((link for link in self.link_catalog if link["id"] == link_id), None)
+        if not item:
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("Editar link")
+        window.geometry("640x300")
+        window.resizable(False, False)
+        window.configure(bg="#eef3f8")
+        window.transient(self.root)
+        window.grab_set()
+        self.center_window(window)
+
+        panel = tk.Frame(window, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
+        panel.pack(fill="both", expand=True, padx=20, pady=20)
+        panel.grid_columnconfigure(1, weight=1)
+
+        name_var = tk.StringVar(value=item["name"])
+        pattern_var = tk.StringVar(value=item["pattern"])
+        url_var = tk.StringVar(value=item["url_template"])
+
+        for row_index, (label_text, variable) in enumerate((
+            ("Nome", name_var),
+            ("Regex", pattern_var),
+            ("URL", url_var),
+        )):
+            tk.Label(
+                panel,
+                text=label_text,
+                font=("Segoe UI Semibold", 10),
+                bg="white",
+                fg="#0f172a",
+            ).grid(row=row_index, column=0, sticky="w", padx=(16, 10), pady=(16 if row_index == 0 else 8, 4))
+
+            tk.Entry(
+                panel,
+                textvariable=variable,
+                font=("Consolas" if label_text != "Nome" else "Segoe UI", 10),
+                relief="flat",
+                highlightthickness=1,
+                highlightbackground="#cbd5e1",
+                highlightcolor="#2563eb",
+            ).grid(row=row_index, column=1, sticky="ew", padx=(0, 16), pady=(16 if row_index == 0 else 8, 4), ipady=7)
+
+        footer = tk.Frame(panel, bg="white")
+        footer.grid(row=3, column=0, columnspan=2, sticky="e", padx=16, pady=(22, 16))
+
+        def save_link() -> None:
+            name = name_var.get().strip()
+            pattern = pattern_var.get().strip()
+            url_template = url_var.get().strip()
+            if not name:
+                messagebox.showinfo("Links", "Digite um nome para o link.", parent=window)
+                return
+
+            pattern_error = self.validate_link_pattern(pattern)
+            if pattern_error:
+                messagebox.showinfo("Links", pattern_error, parent=window)
+                return
+
+            template_error = self.validate_link_template(url_template)
+            if template_error:
+                messagebox.showinfo("Links", template_error, parent=window)
+                return
+
+            item["name"] = name
+            item["pattern"] = pattern
+            item["url_template"] = url_template
+            self.save_link_catalog()
+            refresh_callback()
+            self.render_tasks(preserve_scroll=True)
+            window.destroy()
+
+        tk.Button(
+            footer,
+            text="Cancelar",
+            command=window.destroy,
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=14,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="right", padx=(10, 0))
+
+        tk.Button(
+            footer,
+            text="Salvar",
+            command=save_link,
+            font=("Segoe UI Semibold", 10),
+            relief="flat",
+            bg=PRIMARY_BUTTON_BG,
+            fg="white",
+            activebackground=PRIMARY_BUTTON_HOVER,
+            activeforeground="white",
+            padx=14,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="right")
+
+    def delete_link_rule(self, link_id: str, refresh_callback) -> None:
+        item = next((link for link in self.link_catalog if link["id"] == link_id), None)
+        if not item:
+            return
+        if not messagebox.askyesno("Excluir link", f'Deseja excluir o link "{item["name"]}"?', parent=self.root):
+            return
+        self.link_catalog = [link for link in self.link_catalog if link["id"] != link_id]
+        self.reindex_link_catalog()
+        self.save_link_catalog()
+        refresh_callback()
+        self.render_tasks(preserve_scroll=True)
+
     # CRUD de tags dentro do gerenciador e atualização do catálogo.
     def choose_tag_color(self, color_var: tk.StringVar, button: tk.Button) -> None:
         chosen = colorchooser.askcolor(color=color_var.get(), parent=self.root, title="Escolher cor da tag")[1]
@@ -3645,13 +4173,79 @@ class TaskManagerApp:
         grip.pack(side="left", padx=metrics["grip_padx"])
         grip.bind("<ButtonPress-1>", lambda event, tid=task.id: self.start_drag(event, tid))
 
+        actions = tk.Frame(row_body, bg=row_bg)
+        actions.pack(side="right")
+
+        action_items = [
+            (
+                "≡",
+                lambda tid=task.id: self.open_notes_dialog(tid),
+                "#60A5FA" if task.notes.strip() else "#F1F5F9",
+                "#3B82F6" if task.notes.strip() else "#E2E8F0",
+                metrics["action_font"],
+                "white" if task.notes.strip() else "#CBD5E1",
+                "white" if task.notes.strip() else "#94A3B8",
+                True,
+            ),
+            (
+                "×",
+                lambda tid=task.id: self.delete_task(tid),
+                SECONDARY_BUTTON_BG,
+                SECONDARY_BUTTON_HOVER,
+                metrics["action_font"],
+                SECONDARY_BUTTON_FG,
+                SECONDARY_BUTTON_FG,
+                True,
+            ),
+        ]
+
+        for index, (label, command, button_bg, active_bg, font_name, fg_color, active_fg_color, enabled) in enumerate(action_items):
+            tk.Button(
+                actions,
+                text=label,
+                command=command if enabled else None,
+                font=font_name,
+                relief="flat",
+                bg=button_bg,
+                fg=fg_color,
+                activebackground=active_bg,
+                activeforeground=active_fg_color,
+                cursor="hand2" if enabled else "arrow",
+                width=2,
+                padx=metrics["action_padx"],
+                pady=metrics["action_pady"],
+                bd=0,
+            ).pack(
+                side="left",
+                padx=(metrics["action_pack_padx"], 8 if index == len(action_items) - 1 else metrics["action_pack_padx"]),
+            )
+
+        if task.due_date:
+            due_date_label = tk.Label(
+                row_body,
+                text=self.format_due_date(task.due_date),
+                font=("Segoe UI", 9 if self.layout_mode == "compact" else 10),
+                fg=self.due_date_text_color(task.due_date),
+                bg=row_bg,
+                cursor="hand2",
+                width=10,
+                anchor="e",
+                justify="right",
+                padx=8,
+            )
+            due_date_label.pack(side="right", padx=(8, 6))
+            due_date_label.bind("<Button-1>", lambda _event, tid=task.id: self.open_due_date_dialog(tid))
+
         content = tk.Frame(row_body, bg=row_bg)
         content.pack(side="left", fill="x", expand=True, padx=metrics["content_padx"])
 
         title_line = tk.Frame(content, bg=row_bg)
         title_line.pack(fill="x")
 
-        title_font = tkfont.Font(family="Segoe UI", size=11)
+        title_font = tkfont.Font(
+            family=metrics["title_font"][0],
+            size=metrics["title_font"][1],
+        )
         title_font.configure(overstrike=1 if task.completed else 0)
         title_color = "#94a3b8" if task.completed else "#0f172a"
 
@@ -3708,69 +4302,7 @@ class TaskManagerApp:
             title_entry.focus_set()
             title_entry.select_range(0, "end")
         else:
-            title_label = tk.Label(
-                title_line,
-                text=task.title,
-                font=metrics["title_font"],
-                fg=title_color,
-                bg=row_bg,
-                anchor="w",
-                cursor="xterm",
-            )
-            title_label.pack(side="left", fill="x", expand=True)
-            title_label.bind("<Button-1>", lambda _event, tid=task.id: self.edit_task_title(tid))
-
-        actions = tk.Frame(row_body, bg=row_bg)
-        actions.pack(side="right")
-
-        for label, command, button_bg, active_bg, font_name, fg_color, active_fg_color in [
-            ("×", lambda tid=task.id: self.delete_task(tid), SECONDARY_BUTTON_BG, SECONDARY_BUTTON_HOVER, metrics["action_font"], SECONDARY_BUTTON_FG, SECONDARY_BUTTON_FG),
-        ]:
-            tk.Button(
-                actions,
-                text=label,
-                command=command,
-                font=font_name,
-                relief="flat",
-                bg=button_bg,
-                fg=fg_color,
-                activebackground=active_bg,
-                activeforeground=active_fg_color,
-                cursor="hand2",
-                width=2,
-                padx=metrics["action_padx"],
-                pady=metrics["action_pady"],
-                bd=0,
-            ).pack(side="left", padx=metrics["action_pack_padx"])
-
-        due_date_label = tk.Label(
-            row_body,
-            text=self.format_due_date(task.due_date),
-            font=("Segoe UI", 9 if self.layout_mode == "compact" else 10),
-            fg=self.due_date_text_color(task.due_date),
-            bg=row_bg,
-            cursor="hand2",
-            width=10,
-            anchor="e",
-            justify="right",
-            padx=8,
-        )
-        due_date_label.pack(side="right", padx=(8, 6))
-        due_date_label.bind("<Button-1>", lambda _event, tid=task.id: self.open_due_date_dialog(tid))
-
-        if task.notes.strip():
-            notes_indicator = tk.Label(
-                row_body,
-                text="nota",
-                font=("Segoe UI", 8 if self.layout_mode == "compact" else 9),
-                bg="#E0F2FE",
-                fg="#075985",
-                padx=7,
-                pady=1,
-                cursor="hand2",
-            )
-            notes_indicator.pack(side="right", padx=(8, 2))
-            notes_indicator.bind("<Button-1>", lambda _event, tid=task.id: self.open_notes_dialog(tid))
+            self.render_task_title_segments(title_line, task, title_font, title_color, row_bg)
 
         self.bind_task_context_menu(row, task.id)
 

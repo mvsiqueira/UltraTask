@@ -12,6 +12,7 @@ App desktop para Windows, feito em Python + Tkinter, voltado para gerenciamento 
 - Data de previsão por tarefa
 - Tags com cor personalizada
 - Gerenciador de tags com ordenação manual
+- Links automáticos em títulos de tarefas por regex
 - Filtros por:
   - responsável
   - importância
@@ -35,6 +36,18 @@ O editor de notas suporta:
 - checklist misturada com texto normal
 
 As notas ricas são persistidas em HTML normalizado.
+
+## Links automáticos
+
+O cadastro de links permite transformar trechos do título da tarefa em links clicáveis.
+
+Cada regra define:
+
+- nome
+- expressão regular
+- template de URL
+
+O template de URL aceita marcadores como `{match}`, `{1}` e `{nome}` para inserir o texto capturado pela regex.
 
 ## Como executar em modo de desenvolvimento
 
@@ -79,6 +92,7 @@ Pela tela `Configurações`, é possível:
 - alternar o layout da lista
 - escolher a cor usada no chip de responsável
 - abrir o gerenciador de tags
+- abrir o gerenciador de links automáticos
 
 ## Build portable
 
@@ -94,10 +108,11 @@ Saída esperada:
 - A reordenação da lista principal funciona apenas com os filtros limpos.
 - O botão `Recarregar` relê o arquivo configurado no disco.
 - Tags são específicas do arquivo de tarefas atual.
+- Links automáticos são específicos do arquivo de tarefas atual.
 - O arquivo de dados pode ficar em qualquer pasta acessível ao usuário, incluindo pastas sincronizadas pelo OneDrive.
 
 ## Documentação interna
 
-- [PROJECT_NOTES.md](C:/Users/mvsiq/Downloads/apps/ultratask/PROJECT_NOTES.md): memória operacional do projeto
+- [PROJECT_NOTES.md](PROJECT_NOTES.md): memória operacional do projeto
 
 Esse arquivo registra convenções de desenvolvimento, decisões de interface e contexto acumulado do app.
