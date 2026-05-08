@@ -320,6 +320,7 @@ class TaskManagerApp:
                 "tag_padx": 8,
                 "tag_pady": 2,
                 "tag_pack_padx": (0, 6),
+                "important_marker_width": 10,
                 "title_font": ("Segoe UI", 11),
                 "title_entry_font": ("Segoe UI", 11),
                 "title_entry_ipady": 2,
@@ -340,6 +341,7 @@ class TaskManagerApp:
             "tag_padx": 7,
             "tag_pady": 1,
             "tag_pack_padx": (0, 5),
+            "important_marker_width": 10,
             "title_font": ("Segoe UI", 10),
             "title_entry_font": ("Segoe UI", 10),
             "title_entry_ipady": 1,
@@ -2093,8 +2095,6 @@ class TaskManagerApp:
     def task_row_colors(self, task: Task | None) -> tuple[str, str]:
         if self.is_section(task):
             return "#eef3f8", "#eef3f8"
-        if task and task.important:
-            return "#FEE2E2", "#F87171"
         return "white", "#dbe3ec"
 
     def filtered_tasks(self) -> list[Task]:
@@ -3582,8 +3582,8 @@ class TaskManagerApp:
             return
 
         metrics = self.task_layout_metrics()
-        row_bg = "#FEE2E2" if task.important else "white"
-        border_color = "#F87171" if task.important else "#dbe3ec"
+        row_bg = "white"
+        border_color = "#dbe3ec"
         row = self.task_rows.get(task.id)
         if row and row.winfo_exists() and self.task_row_types.get(task.id) == "task":
             for child in row.winfo_children():
@@ -3592,8 +3592,8 @@ class TaskManagerApp:
                 bg=row_bg,
                 highlightthickness=1,
                 highlightbackground=border_color,
-                padx=metrics["row_padx"],
-                pady=metrics["row_pady"],
+                padx=0,
+                pady=0,
             )
         else:
             if row and row.winfo_exists():
@@ -3603,8 +3603,8 @@ class TaskManagerApp:
                 bg=row_bg,
                 highlightthickness=1,
                 highlightbackground=border_color,
-                padx=metrics["row_padx"],
-                pady=metrics["row_pady"],
+                padx=0,
+                pady=0,
             )
             self.task_rows[task.id] = row
             self.task_row_types[task.id] = "task"
@@ -3614,8 +3614,27 @@ class TaskManagerApp:
         row.pack_forget()
         row.pack(**pack_options)
 
-        grip = tk.Label(
+        # Faixa lateral discreta para marcar importância sem parecer seleção.
+        important_marker = tk.Frame(
             row,
+            bg="#DC2626" if task.important else row_bg,
+            width=metrics["important_marker_width"],
+            cursor="hand2",
+        )
+        important_marker.pack(side="left", fill="y")
+        important_marker.pack_propagate(False)
+        important_marker.bind("<Button-1>", lambda _event, tid=task.id: self.toggle_task_important(tid))
+
+        row_body = tk.Frame(
+            row,
+            bg=row_bg,
+            padx=0,
+            pady=metrics["row_pady"],
+        )
+        row_body.pack(side="left", fill="both", expand=True)
+
+        grip = tk.Label(
+            row_body,
             text="::",
             font=metrics["grip_font"],
             fg="#94a3b8",
@@ -3626,7 +3645,7 @@ class TaskManagerApp:
         grip.pack(side="left", padx=metrics["grip_padx"])
         grip.bind("<ButtonPress-1>", lambda event, tid=task.id: self.start_drag(event, tid))
 
-        content = tk.Frame(row, bg=row_bg)
+        content = tk.Frame(row_body, bg=row_bg)
         content.pack(side="left", fill="x", expand=True, padx=metrics["content_padx"])
 
         title_line = tk.Frame(content, bg=row_bg)
@@ -3701,19 +3720,10 @@ class TaskManagerApp:
             title_label.pack(side="left", fill="x", expand=True)
             title_label.bind("<Button-1>", lambda _event, tid=task.id: self.edit_task_title(tid))
 
-        actions = tk.Frame(row, bg=row_bg)
+        actions = tk.Frame(row_body, bg=row_bg)
         actions.pack(side="right")
 
         for label, command, button_bg, active_bg, font_name, fg_color, active_fg_color in [
-            (
-                "!",
-                lambda tid=task.id: self.toggle_task_important(tid),
-                "#BFDBFE" if task.important else SECONDARY_BUTTON_BG,
-                "#93C5FD" if task.important else SECONDARY_BUTTON_HOVER,
-                metrics["action_font"],
-                "#1E40AF" if task.important else SECONDARY_BUTTON_FG,
-                "#1E40AF" if task.important else SECONDARY_BUTTON_FG,
-            ),
             ("×", lambda tid=task.id: self.delete_task(tid), SECONDARY_BUTTON_BG, SECONDARY_BUTTON_HOVER, metrics["action_font"], SECONDARY_BUTTON_FG, SECONDARY_BUTTON_FG),
         ]:
             tk.Button(
@@ -3721,7 +3731,7 @@ class TaskManagerApp:
                 text=label,
                 command=command,
                 font=font_name,
-                relief="sunken" if label == "!" and task.important else "flat",
+                relief="flat",
                 bg=button_bg,
                 fg=fg_color,
                 activebackground=active_bg,
@@ -3730,11 +3740,11 @@ class TaskManagerApp:
                 width=2,
                 padx=metrics["action_padx"],
                 pady=metrics["action_pady"],
-                bd=1 if label == "!" and task.important else 0,
+                bd=0,
             ).pack(side="left", padx=metrics["action_pack_padx"])
 
         due_date_label = tk.Label(
-            row,
+            row_body,
             text=self.format_due_date(task.due_date),
             font=("Segoe UI", 9 if self.layout_mode == "compact" else 10),
             fg=self.due_date_text_color(task.due_date),
@@ -3750,7 +3760,7 @@ class TaskManagerApp:
 
         if task.notes.strip():
             notes_indicator = tk.Label(
-                row,
+                row_body,
                 text="nota",
                 font=("Segoe UI", 8 if self.layout_mode == "compact" else 9),
                 bg="#E0F2FE",
