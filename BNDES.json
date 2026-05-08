@@ -2,25 +2,10 @@
   "title": "BNDES",
   "tasks": [
     {
-      "id": "2c01be03-ff36-4694-bf86-fb0a1cd2f5af",
-      "title": "fsdgsdhshaaa",
-      "item_type": "task",
-      "section_color": "#B45309",
-      "completed": false,
-      "important": false,
-      "due_date": "2026-04-20",
-      "notes": "",
-      "notes_rich": null,
-      "responsible": "GEDIV",
-      "tags": [
-        "ALÇADAS"
-      ]
-    },
-    {
-      "id": "51b7b47e-0149-4a23-91e9-9b154eb4f40c",
-      "title": "teste",
+      "id": "36bf134c-7061-4746-ac2e-8b74526917e3",
+      "title": "ALÇADAS",
       "item_type": "section",
-      "section_color": "#804040",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "",
@@ -30,8 +15,24 @@
       "tags": []
     },
     {
-      "id": "14115265-f390-4d94-a868-a1ab585a60c1",
-      "title": "teste (copia)",
+      "id": "84c44294-ee30-4369-91df-a56bebe4ab2b",
+      "title": "Ajustar perfis da ACO",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "ACO -> 2 usuários com FV60 -> verificar por que receberam a transação -> email para autorizar PRD",
+      "notes_rich": "ACO -&gt; 2 usuários com FV60 -&gt; verificar por que receberam a transação -&gt; email para autorizar PRD",
+      "responsible": "ATOS",
+      "tags": [
+        "ALÇADAS",
+        "Funções 2"
+      ]
+    },
+    {
+      "id": "f6baac7a-08c9-432a-b959-deaf08fd7ed6",
+      "title": "Homologar",
       "item_type": "task",
       "section_color": "#B45309",
       "completed": false,
@@ -39,31 +40,237 @@
       "due_date": "",
       "notes": "",
       "notes_rich": null,
-      "responsible": "SUNDA",
+      "responsible": "GLICO",
       "tags": [
-        "SAP TRM"
+        "ALÇADAS",
+        "Workflow 1"
       ]
     },
     {
-      "id": "d829c880-83a0-49d2-864e-179e8efc623d",
-      "title": "teste",
+      "id": "da001fb2-e2ca-4fc3-bd28-edf39aaf50e6",
+      "title": "Homologar",
       "item_type": "task",
       "section_color": "#B45309",
       "completed": false,
       "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "GLICO",
+      "tags": [
+        "ALÇADAS",
+        "Workflow 2"
+      ]
+    },
+    {
+      "id": "92457ce9-2f8a-4c6e-b9a8-bdc485254fe7",
+      "title": "Confirmar fluxo novo não terá delegação",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "-> verificar com Ernesto SBWP -> Configurações de workflow",
+      "notes_rich": "-&gt; verificar com Ernesto SBWP -&gt; Configurações de workflow",
+      "responsible": "",
+      "tags": [
+        "ALÇADAS",
+        "Workflow 2"
+      ]
+    },
+    {
+      "id": "55f4b1a0-c4a3-475e-a0da-7b53fda96976",
+      "title": "Pendências GDIV",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "- Automatizar fatura da boletagem\n\t- verificar como o processo está hoje com Karuzo",
+      "notes_rich": "- Automatizar fatura da boletagem\n\t- verificar como o processo está hoje com Karuzo\n",
+      "responsible": "",
+      "tags": [
+        "ALÇADAS",
+        "MONPAG",
+        "GDIV"
+      ]
+    },
+    {
+      "id": "e97560ee-0b27-42f8-a49c-881e627a8771",
+      "title": "FTLD LCA: Importar config de PRD para HOM com Karuzo",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": true,
       "due_date": "",
       "notes": "",
       "notes_rich": null,
       "responsible": "",
       "tags": [
-        "SAP TRM"
+        "ALÇADAS",
+        "MONPAG",
+        "GDIV",
+        "!!!"
       ]
     },
     {
-      "id": "6eb4e9c4-4494-4d4a-bc29-6b13a59705fa",
-      "title": "TESTE 2",
+      "id": "656d340c-c7e9-40cf-951f-a4a2e937dfbb",
+      "title": "INC000004425804 - Dados aprovação fatura - Homologar",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": true,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "Fernanda",
+      "tags": [
+        "ALÇADAS",
+        "MONPAG",
+        "GDIV"
+      ]
+    },
+    {
+      "id": "f10b19c8-fdc4-4e8a-b88b-db31607d0a1e",
+      "title": "04/2026 - Templates GDIV - LCA/LCD - Passar ajustes para HOM",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "HUAN",
+      "tags": [
+        "ALÇADAS",
+        "MONPAG",
+        "GDIV"
+      ]
+    },
+    {
+      "id": "945e24ae-48d6-42df-a870-bceeb6337a8f",
+      "title": "04/2026 - Templates GVAL Fundos Fechados CETIP - Verificar se \"Amortização em Câmara\" = \"Venda\"",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "HUAN",
+      "tags": [
+        "ALÇADAS",
+        "MONPAG",
+        "GVAL"
+      ]
+    },
+    {
+      "id": "5bf0d745-14d9-4e4c-a815-50308c3b64e3",
+      "title": "05/2026 - Templates GVAL Fundos Fechados Não CETIP",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "HUAN",
+      "tags": [
+        "ALÇADAS",
+        "MONPAG",
+        "GVAL"
+      ]
+    },
+    {
+      "id": "0cad0f38-559f-4634-9da5-2fa60e2c89da",
+      "title": "04/2026 - Templates GVAL Debêntures - Verificar se \"Conversão em Ações\" = \"Venda\"",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "MATHEUS",
+      "tags": [
+        "ALÇADAS",
+        "MONPAG",
+        "GVAL"
+      ]
+    },
+    {
+      "id": "af6a453e-7008-43ee-90fd-15f980eb0619",
+      "title": "05/2026 - Templates GVAL Ações BR",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "MATHEUS",
+      "tags": [
+        "ALÇADAS",
+        "MONPAG",
+        "GVAL"
+      ]
+    },
+    {
+      "id": "79b8b40a-cb44-4b25-b55e-5f6a6eab5406",
+      "title": "04/2026 - Templates GVAL Fundos abertos Rota e Gaia - Verificar Intercompany",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "PAULO",
+      "tags": [
+        "ALÇADAS",
+        "MONPAG",
+        "GVAL"
+      ]
+    },
+    {
+      "id": "824b2493-4ea4-4cb3-af43-8ef84c8f5357",
+      "title": "05/2026 - Templates GVAL Globals",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "PAULO",
+      "tags": [
+        "ALÇADAS",
+        "MONPAG",
+        "GVAL"
+      ]
+    },
+    {
+      "id": "fa5649e6-2fd4-49d8-9e62-d2f6c05fdc7f",
+      "title": "Mandar tabela de eventos (Fundos Ñ CETIP, Ações NYSE, BDR, ETF)",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "GVAL-EDUARDO",
+      "tags": [
+        "ALÇADAS",
+        "MONPAG",
+        "GVAL"
+      ]
+    },
+    {
+      "id": "bbb25528-d18f-4987-a80d-783db432708b",
+      "title": "FATURA RÁPIDA",
       "item_type": "section",
-      "section_color": "#804040",
+      "section_color": "#B45309",
       "completed": false,
       "important": false,
       "due_date": "",
@@ -73,8 +280,96 @@
       "tags": []
     },
     {
-      "id": "cf2a20b5-c6ae-4c4b-b492-75b03a7a63de",
-      "title": "fsdgsdhshaaa (copia)",
+      "id": "1b003f88-24b2-4932-818e-1fa2ce36cac1",
+      "title": "Homologar correção do template \"Comissão de Anuência\"",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "NICOLE",
+      "tags": [
+        "FATRAP"
+      ]
+    },
+    {
+      "id": "07dbafa8-f534-42db-963f-c96f1627452a",
+      "title": "Passar para PRD \"Condomínio JK 7º\", \"Condomínio JK 5º\", \"Condomínio EDSERJ\" e \"FAPES\"",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "NICOLE",
+      "tags": [
+        "FATRAP"
+      ]
+    },
+    {
+      "id": "33465d44-5d9f-4a46-9159-43eecda90196",
+      "title": "OUTROS",
+      "item_type": "section",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "",
+      "tags": []
+    },
+    {
+      "id": "4cdccda9-9212-43ce-9470-d1b83c0241c4",
+      "title": "LCD com juros semestrais - Testar em HOM",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "",
+      "notes_rich": null,
+      "responsible": "GDIV-Verônica",
+      "tags": [
+        "GDIV"
+      ]
+    },
+    {
+      "id": "213601da-8a49-4827-a966-c29eaf404817",
+      "title": "Extrações Datalake - passar para PRD",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": true,
+      "due_date": "",
+      "notes": "Tarefas:\n☐ ver objeto alterado\n☐ documentar modelos para o Elias\n☐ solicitar alterações ao Elias\n☐ passar tudo para PRD",
+      "notes_rich": "<b>Tarefas:</b>\n☐ ver objeto alterado\n☐ documentar modelos para o Elias\n☐ solicitar alterações ao Elias\n☐ passar tudo para PRD",
+      "responsible": "",
+      "tags": [
+        "GDIV"
+      ]
+    },
+    {
+      "id": "ec049301-c514-413e-931c-f553b3d79ee5",
+      "title": "SOFR fazer avaliação",
+      "item_type": "task",
+      "section_color": "#B45309",
+      "completed": false,
+      "important": false,
+      "due_date": "",
+      "notes": "- Pedir para abrir INC \n- Solicitar Renato abrir PBI \n- Encaminhar PBI para a Atos \n- Testar Cesta de Moedas",
+      "notes_rich": "- Pedir para abrir INC \n- Solicitar Renato abrir PBI \n- Encaminhar PBI para a Atos \n- Testar Cesta de Moedas",
+      "responsible": "GDIV",
+      "tags": [
+        "GDIV"
+      ]
+    },
+    {
+      "id": "fffcc450-fee4-4682-b0bb-6f1e0ddd5d85",
+      "title": "e-Financeira: Gerar certificado de assinatura de código",
       "item_type": "task",
       "section_color": "#B45309",
       "completed": false,
@@ -84,104 +379,65 @@
       "notes_rich": null,
       "responsible": "",
       "tags": [
-        "ALÇADAS"
+        "GDIV"
       ]
-    },
-    {
-      "id": "28ee4eb4-5c74-482e-a553-9c73afafdcab",
-      "title": "teste 2",
-      "item_type": "task",
-      "section_color": "#B45309",
-      "completed": false,
-      "important": false,
-      "due_date": "2026-04-23",
-      "notes": "fsdfsdfsdfs\nddhfhdh\n\nfgdfdfgd\nssss",
-      "notes_rich": "<b>fsdfsdfsdfs</b>\nddhfhdh\n\n<i>fgdfdfgd</i>\nssss",
-      "responsible": "",
-      "tags": []
-    },
-    {
-      "id": "658da01c-3307-4d6c-b8ae-69e2d79ad8ae",
-      "title": "verificar sessões",
-      "item_type": "task",
-      "section_color": "#B45309",
-      "completed": false,
-      "important": false,
-      "due_date": "",
-      "notes": "",
-      "notes_rich": null,
-      "responsible": "",
-      "tags": [
-        "ALÇADAS"
-      ]
-    },
-    {
-      "id": "4f86789d-77ef-4a77-ba6d-fc5649536a09",
-      "title": "teste 2 (copia)",
-      "item_type": "task",
-      "section_color": "#B45309",
-      "completed": false,
-      "important": false,
-      "due_date": "",
-      "notes": "",
-      "notes_rich": null,
-      "responsible": "",
-      "tags": []
-    },
-    {
-      "id": "aa6cc881-bc5a-49a8-845c-fc617ef3e657",
-      "title": "verificar sessões (copia)",
-      "item_type": "task",
-      "section_color": "#B45309",
-      "completed": false,
-      "important": false,
-      "due_date": "",
-      "notes": "",
-      "notes_rich": null,
-      "responsible": "",
-      "tags": [
-        "ALÇADAS"
-      ]
-    },
-    {
-      "id": "083af9d9-a7f9-41f7-841d-e7e7431e2d13",
-      "title": "dadada",
-      "item_type": "task",
-      "section_color": "#B45309",
-      "completed": false,
-      "important": false,
-      "due_date": "",
-      "notes": "",
-      "notes_rich": null,
-      "responsible": "",
-      "tags": []
-    },
-    {
-      "id": "0fbd3a7c-db4c-4607-b456-7e6a4a31ae3f",
-      "title": "dedede",
-      "item_type": "task",
-      "section_color": "#B45309",
-      "completed": false,
-      "important": false,
-      "due_date": "",
-      "notes": "",
-      "notes_rich": null,
-      "responsible": "",
-      "tags": []
     }
   ],
   "tag_catalog": [
     {
       "name": "ALÇADAS",
-      "color": "#FF8040"
+      "color": "#FF8040",
+      "order": 0
     },
     {
       "name": "SAP FI",
-      "color": "#FF0000"
+      "color": "#FF0000",
+      "order": 1
     },
     {
       "name": "SAP TRM",
-      "color": "#008000"
+      "color": "#008000",
+      "order": 2
+    },
+    {
+      "name": "Funções 2",
+      "color": "#2563EB",
+      "order": 3
+    },
+    {
+      "name": "Workflow 1",
+      "color": "#2563EB",
+      "order": 4
+    },
+    {
+      "name": "Workflow 2",
+      "color": "#2563EB",
+      "order": 5
+    },
+    {
+      "name": "MONPAG",
+      "color": "#2563EB",
+      "order": 6
+    },
+    {
+      "name": "GDIV",
+      "color": "#2563EB",
+      "order": 7
+    },
+    {
+      "name": "!!!",
+      "color": "#2563EB",
+      "order": 8
+    },
+    {
+      "name": "GVAL",
+      "color": "#2563EB",
+      "order": 9
+    },
+    {
+      "name": "FATRAP",
+      "color": "#2563EB",
+      "order": 10
     }
   ]
 }
