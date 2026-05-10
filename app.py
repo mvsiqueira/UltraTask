@@ -287,6 +287,14 @@ class TaskManagerApp:
         self.drag_data = {"task_id": None, "active": False, "target_index": None}
         self.drop_indicator: tk.Frame | None = None
         self.tag_drag_data = {"key": None, "active": False, "target_index": None}
+        self.bulk_mode = False
+        self.bulk_selected_task_ids: set[str] = set()
+        self.bulk_selection_vars: dict[str, tk.BooleanVar] = {}
+        self.bulk_bar: tk.Frame | None = None
+        self.bulk_button: tk.Button | None = None
+        self.bulk_button_icon: tk.PhotoImage | None = None
+        self.bulk_button_active_icon: tk.PhotoImage | None = None
+        self.bulk_count_var = tk.StringVar(value="")
 
         self.responsible_filter_var = tk.StringVar(value="Todos")
         self.tag_filter_var = tk.StringVar(value="Todas")
@@ -572,6 +580,15 @@ class TaskManagerApp:
                 "0100001",
                 "0011100",
             ],
+            "bulk": [
+                "1111100",
+                "1000100",
+                "1010101",
+                "1001110",
+                "1111100",
+                "0000000",
+                "0000000",
+            ],
             "tags": [
                 "1111110",
                 "1000010",
@@ -613,11 +630,20 @@ class TaskManagerApp:
             icon_name: self.load_toolbox_icon(icon_name, fallback_pattern, TOOLBOX_BUTTON_BG)
             for icon_name, fallback_pattern in toolbox_fallback_patterns.items()
         }
+        self.bulk_button_icon = self.toolbox_icons["bulk"]
+        if (TOOLBOX_ICON_DIR / "bulk.png").exists():
+            self.bulk_button_active_icon = self.bulk_button_icon
+        else:
+            self.bulk_button_active_icon = self.create_toolbox_icon(
+                toolbox_fallback_patterns["bulk"],
+                PRIMARY_BUTTON_BG,
+            )
 
         # Grupo principal de ações rápidas da barra lateral.
         for icon_key, tooltip_text, command in (
             ("add", "Nova tarefa", self.add_task),
             ("section", "Nova seção", self.add_section),
+            ("bulk", "Operações em lote", self.toggle_bulk_mode),
             ("reload", "Recarregar", self.reload_tasks_from_disk),
         ):
             button_slot = tk.Frame(toolbox_inner, bg="#f8fbff", width=40, height=40)
@@ -639,6 +665,8 @@ class TaskManagerApp:
                 cursor="hand2",
             )
             action_button.pack(fill="both", expand=True)
+            if icon_key == "bulk":
+                self.bulk_button = action_button
             self.bind_action_button_hover(action_button, TOOLBOX_BUTTON_BG, TOOLBOX_BUTTON_HOVER)
             self.attach_tooltip(action_button, tooltip_text)
 
@@ -679,6 +707,47 @@ class TaskManagerApp:
         container = tk.Frame(content_area, bg="#eef3f8")
         container.pack(fill="both", expand=True, pady=(12, 0))
 
+        self.bulk_bar = tk.Frame(
+            container,
+            bg="#f8fbff",
+            highlightthickness=1,
+            highlightbackground="#d7e3f4",
+            padx=10,
+            pady=7,
+        )
+        self.bulk_count_var.set("0 tarefas selecionadas")
+
+        tk.Label(
+            self.bulk_bar,
+            textvariable=self.bulk_count_var,
+            font=("Segoe UI Semibold", 9),
+            bg="#f8fbff",
+            fg="#1e3a8a",
+        ).pack(side="left", padx=(0, 10))
+
+        for label, command in (
+            ("+ Tag", self.bulk_add_tag),
+            ("- Tag", self.bulk_remove_tag),
+            ("Responsável", self.bulk_set_responsible),
+            ("Marcar !", lambda: self.bulk_set_important(True)),
+            ("Desmarcar !", lambda: self.bulk_set_important(False)),
+            ("Excluir", self.bulk_delete_tasks),
+            ("Limpar", self.clear_bulk_selection),
+        ):
+            tk.Button(
+                self.bulk_bar,
+                text=label,
+                command=command,
+                font=("Segoe UI Semibold", 9),
+                relief="flat",
+                bg=SECONDARY_BUTTON_BG,
+                fg=SECONDARY_BUTTON_FG,
+                activebackground=SECONDARY_BUTTON_HOVER,
+                padx=10,
+                pady=5,
+                cursor="hand2",
+            ).pack(side="left", padx=(0, 6))
+
         self.canvas = tk.Canvas(
             container,
             bg="#eef3f8",
@@ -717,12 +786,17 @@ class TaskManagerApp:
 
     def bind_action_button_hover(self, button: tk.Button, base_bg: str, hover_bg: str) -> None:
         def on_enter(_event) -> None:
+            if button is self.bulk_button and self.bulk_mode:
+                return
             button.configure(
                 bg=hover_bg,
                 activebackground=hover_bg,
             )
 
         def on_leave(_event) -> None:
+            if button is self.bulk_button and self.bulk_mode:
+                self.update_bulk_button_style()
+                return
             button.configure(
                 bg=base_bg,
                 activebackground=hover_bg,
@@ -2279,6 +2353,289 @@ class TaskManagerApp:
         self.important_filter_var.set("Todas")
         self.tag_filter_var.set("Todas")
         self.render_tasks()
+
+    # Modo de seleção e ações de alteração em lote.
+    def toggle_bulk_mode(self) -> None:
+        self.bulk_mode = not self.bulk_mode
+        if not self.bulk_mode:
+            self.bulk_selected_task_ids.clear()
+            self.bulk_selection_vars.clear()
+        self.update_bulk_button_style()
+        self.update_bulk_bar()
+        self.render_tasks(preserve_scroll=True)
+
+    def update_bulk_button_style(self) -> None:
+        if not self.bulk_button:
+            return
+        if self.bulk_mode:
+            self.bulk_button.configure(
+                image=self.bulk_button_active_icon,
+                bg=PRIMARY_BUTTON_BG,
+                activebackground=PRIMARY_BUTTON_HOVER,
+                relief="sunken",
+                bd=1,
+            )
+        else:
+            self.bulk_button.configure(
+                image=self.bulk_button_icon,
+                bg=TOOLBOX_BUTTON_BG,
+                activebackground=TOOLBOX_BUTTON_HOVER,
+                relief="flat",
+                bd=0,
+            )
+
+    def update_bulk_bar(self) -> None:
+        if not self.bulk_bar:
+            return
+        selected_count = len(self.bulk_selected_task_ids)
+        self.bulk_count_var.set(
+            f"{selected_count} tarefa selecionada" if selected_count == 1 else f"{selected_count} tarefas selecionadas"
+        )
+        if self.bulk_mode:
+            self.bulk_bar.pack(fill="x", pady=(0, 8), before=self.canvas)
+        else:
+            self.bulk_bar.pack_forget()
+
+    def set_bulk_selection(self, task_id: str, selected: bool) -> None:
+        if selected:
+            self.bulk_selected_task_ids.add(task_id)
+        else:
+            self.bulk_selected_task_ids.discard(task_id)
+        self.update_bulk_bar()
+
+    def bulk_section_task_ids(self, section_id: str) -> list[str]:
+        section_found = False
+        task_ids: list[str] = []
+        for task in self.filtered_tasks():
+            if self.is_section(task):
+                if section_found:
+                    break
+                section_found = task.id == section_id
+                continue
+            if section_found:
+                task_ids.append(task.id)
+        return task_ids
+
+    def toggle_bulk_section_selection(self, section_id: str) -> str:
+        if not self.bulk_mode:
+            return ""
+
+        task_ids = self.bulk_section_task_ids(section_id)
+        if not task_ids:
+            return "break"
+
+        should_select = not all(task_id in self.bulk_selected_task_ids for task_id in task_ids)
+        for task_id in task_ids:
+            if should_select:
+                self.bulk_selected_task_ids.add(task_id)
+            else:
+                self.bulk_selected_task_ids.discard(task_id)
+            var = self.bulk_selection_vars.get(task_id)
+            if var:
+                var.set(should_select)
+        self.update_bulk_bar()
+        return "break"
+
+    def clear_bulk_selection(self) -> None:
+        self.bulk_selected_task_ids.clear()
+        for var in self.bulk_selection_vars.values():
+            var.set(False)
+        self.update_bulk_bar()
+
+    def selected_bulk_tasks(self) -> list[Task]:
+        selected_ids = set(self.bulk_selected_task_ids)
+        return [task for task in self.tasks if task.id in selected_ids and not self.is_section(task)]
+
+    def require_bulk_tasks(self) -> list[Task] | None:
+        tasks = self.selected_bulk_tasks()
+        if not tasks:
+            messagebox.showinfo("Operações em lote", "Selecione ao menos uma tarefa.")
+            return None
+        return tasks
+
+    def confirm_bulk_action(self, action_text: str, count: int) -> bool:
+        return messagebox.askyesno(
+            "Operações em lote",
+            f"{action_text} em {count} tarefa(s)?",
+            parent=self.root,
+        )
+
+    def choose_catalog_tag(self, title: str, prompt: str) -> str | None:
+        if not self.tag_catalog:
+            messagebox.showinfo("Tags", "Cadastre ao menos uma tag antes de usar esta ação.")
+            return None
+        options = [item["name"] for item in self.sorted_tag_catalog()]
+        result: dict[str, str | None] = {"value": None}
+
+        window = tk.Toplevel(self.root)
+        window.title(title)
+        window.geometry("360x420")
+        window.minsize(320, 360)
+        window.configure(bg="#eef3f8")
+        window.transient(self.root)
+        window.grab_set()
+        self.center_window(window)
+
+        tk.Label(
+            window,
+            text=prompt,
+            font=("Segoe UI Semibold", 13),
+            bg="#eef3f8",
+            fg="#0f172a",
+        ).pack(anchor="w", padx=20, pady=(18, 10))
+
+        selected_var = tk.StringVar(value=options[0])
+        list_frame = tk.Frame(window, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
+        list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 16))
+
+        listbox = tk.Listbox(
+            list_frame,
+            font=("Segoe UI", 10),
+            relief="flat",
+            bd=0,
+            activestyle="dotbox",
+            exportselection=False,
+        )
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
+        listbox.configure(yscrollcommand=scrollbar.set)
+        listbox.pack(side="left", fill="both", expand=True, padx=8, pady=8)
+        scrollbar.pack(side="right", fill="y")
+        for option in options:
+            listbox.insert("end", option)
+        listbox.selection_set(0)
+
+        def select_current(_event=None) -> None:
+            selection = listbox.curselection()
+            if selection:
+                selected_var.set(options[selection[0]])
+
+        listbox.bind("<<ListboxSelect>>", select_current)
+
+        def submit() -> None:
+            select_current()
+            result["value"] = selected_var.get()
+            window.destroy()
+
+        listbox.bind("<Double-Button-1>", lambda _event: submit())
+        listbox.bind("<Return>", lambda _event: submit())
+        listbox.bind("<Escape>", lambda _event: window.destroy())
+
+        footer = tk.Frame(window, bg="#eef3f8")
+        footer.pack(fill="x", padx=20, pady=(0, 18))
+
+        tk.Button(
+            footer,
+            text="Cancelar",
+            command=window.destroy,
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=12,
+            pady=7,
+            cursor="hand2",
+        ).pack(side="right", padx=(8, 0))
+
+        tk.Button(
+            footer,
+            text="Selecionar",
+            command=submit,
+            font=("Segoe UI Semibold", 10),
+            relief="flat",
+            bg=PRIMARY_BUTTON_BG,
+            fg="white",
+            activebackground=PRIMARY_BUTTON_HOVER,
+            activeforeground="white",
+            padx=12,
+            pady=7,
+            cursor="hand2",
+        ).pack(side="right")
+
+        listbox.focus_set()
+        window.wait_window()
+        return result["value"]
+
+    def bulk_add_tag(self) -> None:
+        tasks = self.require_bulk_tasks()
+        if not tasks:
+            return
+        tag_name = self.choose_catalog_tag("Adicionar tag", "Informe a tag a adicionar:")
+        if not tag_name:
+            return
+        if not self.confirm_bulk_action(f"Adicionar a tag '{tag_name}'", len(tasks)):
+            return
+        for task in tasks:
+            if tag_name.lower() not in {tag.lower() for tag in task.tags}:
+                task.tags.append(tag_name)
+                task.tags = self.ordered_task_tags(task.tags)
+        self.finish_bulk_update()
+
+    def bulk_remove_tag(self) -> None:
+        tasks = self.require_bulk_tasks()
+        if not tasks:
+            return
+        tag_name = self.choose_catalog_tag("Remover tag", "Informe a tag a remover:")
+        if not tag_name:
+            return
+        if not self.confirm_bulk_action(f"Remover a tag '{tag_name}'", len(tasks)):
+            return
+        tag_key = tag_name.lower()
+        for task in tasks:
+            task.tags = [tag for tag in task.tags if tag.lower() != tag_key]
+        self.finish_bulk_update()
+
+    def bulk_set_responsible(self) -> None:
+        tasks = self.require_bulk_tasks()
+        if not tasks:
+            return
+        answer = simpledialog.askstring(
+            "Definir responsável",
+            "Informe o responsável para as tarefas selecionadas:",
+            parent=self.root,
+        )
+        if answer is None:
+            return
+        responsible = answer.strip()
+        if not self.confirm_bulk_action(f"Definir responsável '{responsible or '(vazio)'}'", len(tasks)):
+            return
+        for task in tasks:
+            task.responsible = responsible
+        self.finish_bulk_update()
+
+    def bulk_set_important(self, should_mark: bool) -> None:
+        tasks = self.require_bulk_tasks()
+        if not tasks:
+            return
+        action = "Marcar como importante" if should_mark else "Desmarcar como importante"
+        if not self.confirm_bulk_action(action, len(tasks)):
+            return
+        for task in tasks:
+            task.important = should_mark
+        self.finish_bulk_update()
+
+    def bulk_delete_tasks(self) -> None:
+        tasks = self.require_bulk_tasks()
+        if not tasks:
+            return
+        count = len(tasks)
+        if not messagebox.askyesno(
+            "Excluir tarefas",
+            f"Excluir definitivamente {count} tarefa(s) selecionada(s)?",
+            parent=self.root,
+        ):
+            return
+        selected_ids = {task.id for task in tasks}
+        self.tasks = [task for task in self.tasks if task.id not in selected_ids]
+        self.finish_bulk_update()
+
+    def finish_bulk_update(self) -> None:
+        self.bulk_selected_task_ids.clear()
+        self.bulk_selection_vars.clear()
+        self.save_tasks()
+        self.refresh_filter_options()
+        self.update_bulk_bar()
+        self.render_tasks(preserve_scroll=True)
 
     def collect_tags(self) -> set[str]:
         tags: set[str] = {item["name"] for item in self.tag_catalog.values()}
@@ -4096,6 +4453,10 @@ class TaskManagerApp:
         # preservar a fração do scroll evita saltos para o topo a cada atualização.
         scroll_fraction = self.current_scroll_fraction() if preserve_scroll else 0.0
         tasks = self.filtered_tasks()
+        existing_task_ids = {task.id for task in self.tasks if not self.is_section(task)}
+        self.bulk_selected_task_ids.intersection_update(existing_task_ids)
+        self.bulk_selection_vars.clear()
+        self.update_bulk_bar()
         visible_ids = {task.id for task in tasks}
         visible_types = {task.id: self.task_row_type(task) for task in tasks}
 
@@ -4215,6 +4576,21 @@ class TaskManagerApp:
         )
         grip.pack(side="left", padx=metrics["grip_padx"])
         grip.bind("<ButtonPress-1>", lambda event, tid=task.id: self.start_drag(event, tid))
+
+        if self.bulk_mode:
+            selected_var = tk.BooleanVar(value=task.id in self.bulk_selected_task_ids)
+            self.bulk_selection_vars[task.id] = selected_var
+            bulk_checkbox = tk.Checkbutton(
+                row_body,
+                variable=selected_var,
+                command=lambda tid=task.id, var=selected_var: self.set_bulk_selection(tid, var.get()),
+                bg=row_bg,
+                activebackground=row_bg,
+                cursor="hand2",
+                bd=0,
+                highlightthickness=0,
+            )
+            bulk_checkbox.pack(side="left", padx=(0, 6))
 
         actions = tk.Frame(row_body, bg=row_bg)
         actions.pack(side="right")
@@ -4362,6 +4738,10 @@ class TaskManagerApp:
             pack_options["before"] = before_widget
         row.pack_forget()
         row.pack(**pack_options)
+        if self.bulk_mode:
+            row.bind("<Button-1>", lambda _event, tid=task.id: self.toggle_bulk_section_selection(tid))
+        else:
+            row.unbind("<Button-1>")
 
         grip = tk.Label(
             row,
@@ -4377,10 +4757,24 @@ class TaskManagerApp:
 
         section_line = tk.Frame(row, bg="#eef3f8")
         section_line.pack(side="left", fill="x", expand=True, pady=(8, 2))
+        if self.bulk_mode:
+            section_line.configure(cursor="hand2")
+            section_line.bind(
+                "<Button-1>",
+                lambda _event, tid=task.id: self.toggle_bulk_section_selection(tid),
+                add="+",
+            )
 
         lead_line = tk.Frame(section_line, bg=section_color, height=1, width=28)
         lead_line.pack(side="left", padx=(0, 6), pady=(7, 0))
         lead_line.pack_propagate(False)
+        if self.bulk_mode:
+            lead_line.configure(cursor="hand2")
+            lead_line.bind(
+                "<Button-1>",
+                lambda _event, tid=task.id: self.toggle_bulk_section_selection(tid),
+                add="+",
+            )
 
         if self.editing_task_id == task.id:
             edit_var = tk.StringVar(value=task.title)
@@ -4416,14 +4810,26 @@ class TaskManagerApp:
                 fg=section_color,
                 bg="#eef3f8",
                 padx=2,
-                cursor="xterm",
+                cursor="hand2" if self.bulk_mode else "xterm",
                 anchor="s",
             )
             title_label.pack(side="left", pady=(6, 0))
-            title_label.bind("<Button-1>", lambda _event, tid=task.id: self.edit_task_title(tid))
+            title_label.bind(
+                "<Button-1>",
+                lambda _event, tid=task.id: (
+                    self.toggle_bulk_section_selection(tid) if self.bulk_mode else self.edit_task_title(tid)
+                ),
+            )
 
         line_right = tk.Frame(section_line, bg=section_color, height=1)
         line_right.pack(side="left", fill="x", expand=True, padx=(8, 0), pady=(7, 0))
+        if self.bulk_mode:
+            line_right.configure(cursor="hand2")
+            line_right.bind(
+                "<Button-1>",
+                lambda _event, tid=task.id: self.toggle_bulk_section_selection(tid),
+                add="+",
+            )
 
         self.bind_task_context_menu(row, task.id)
 
