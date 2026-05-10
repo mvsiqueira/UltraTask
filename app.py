@@ -268,6 +268,7 @@ class TaskManagerApp:
         self.file_title = self.load_file_title()
         self.tag_catalog = self.load_tag_catalog()
         self.link_catalog = self.load_link_catalog()
+        self.compiled_link_rules: list[tuple[dict[str, Any], re.Pattern[str]]] | None = None
         self.tasks: list[Task] = self.load_tasks()
         # Older files may know about tags only through tasks, while newer files
         # also persist tag metadata such as color and display order.
@@ -1170,6 +1171,7 @@ class TaskManagerApp:
         return sorted(catalog, key=lambda item: (int(item.get("order", 0)), item["name"].lower()))
 
     def save_link_catalog(self) -> None:
+        self.compiled_link_rules = None
         self.save_tasks()
 
     def sorted_link_catalog(self) -> list[dict[str, Any]]:
@@ -1183,6 +1185,19 @@ class TaskManagerApp:
     def reindex_link_catalog(self) -> None:
         for index, item in enumerate(self.sorted_link_catalog()):
             item["order"] = index
+
+    def get_compiled_link_rules(self) -> list[tuple[dict[str, Any], re.Pattern[str]]]:
+        if self.compiled_link_rules is not None:
+            return self.compiled_link_rules
+
+        rules: list[tuple[dict[str, Any], re.Pattern[str]]] = []
+        for rule in self.sorted_link_catalog():
+            pattern = str(rule.get("pattern", "")).strip()
+            if self.validate_link_pattern(pattern):
+                continue
+            rules.append((rule, re.compile(pattern)))
+        self.compiled_link_rules = rules
+        return rules
 
     def validate_link_pattern(self, pattern: str) -> str | None:
         cleaned = pattern.strip()
@@ -1223,12 +1238,7 @@ class TaskManagerApp:
         return re.sub(r"\{(match|\d+|[A-Za-z_]\w*)\}", replace_marker, template)
 
     def title_link_segments(self, text: str) -> list[dict[str, str | None]]:
-        rules: list[tuple[dict[str, Any], re.Pattern[str]]] = []
-        for rule in self.sorted_link_catalog():
-            if self.validate_link_pattern(str(rule.get("pattern", ""))):
-                continue
-            rules.append((rule, re.compile(str(rule["pattern"]))))
-
+        rules = self.get_compiled_link_rules()
         if not rules:
             return [{"text": text, "url": None}]
 
@@ -1275,6 +1285,7 @@ class TaskManagerApp:
             url = segment["url"]
             if not text:
                 continue
+
             label = tk.Label(
                 parent,
                 text=text,
@@ -1359,6 +1370,35 @@ class TaskManagerApp:
             text=display_text,
             fill=self.contrast_text_color(self.responsible_color),
             font=chip_font,
+        )
+        return canvas
+
+    def create_notes_badge(self, parent: tk.Widget, metrics: dict[str, object]) -> tk.Canvas:
+        size = 18 if self.layout_mode == "normal" else 16
+        badge_font = tkfont.Font(family=metrics["tag_font"][0], size=metrics["tag_font"][1], weight="bold")
+        canvas = tk.Canvas(
+            parent,
+            width=size,
+            height=size,
+            bg=parent.cget("bg"),
+            highlightthickness=0,
+            bd=0,
+            cursor="hand2",
+        )
+        canvas.create_oval(
+            1,
+            1,
+            size - 1,
+            size - 1,
+            fill="#60A5FA",
+            outline="#60A5FA",
+        )
+        canvas.create_text(
+            size // 2,
+            (size // 2) - 1,
+            text="≡",
+            fill="white",
+            font=badge_font,
         )
         return canvas
 
@@ -2944,6 +2984,7 @@ class TaskManagerApp:
     def reload_tasks_from_disk(self) -> None:
         self.tasks = self.load_tasks()
         self.link_catalog = self.load_link_catalog()
+        self.compiled_link_rules = None
         self.sync_tag_catalog_with_tasks()
         self.normalize_task_tags()
         self.storage_status_var.set(self.storage_status_text())
@@ -3178,6 +3219,7 @@ class TaskManagerApp:
             self.tasks = []
             self.tag_catalog = {}
             self.link_catalog = []
+            self.compiled_link_rules = None
             self.save_tasks([])
         else:
             self.tasks_file = new_file
@@ -3185,6 +3227,7 @@ class TaskManagerApp:
             self.file_title = self.load_file_title()
             self.tag_catalog = self.load_tag_catalog()
             self.link_catalog = self.load_link_catalog()
+            self.compiled_link_rules = None
             self.tasks = self.load_tasks()
             self.sync_tag_catalog_with_tasks()
             self.normalize_task_tags()
@@ -4176,49 +4219,22 @@ class TaskManagerApp:
         actions = tk.Frame(row_body, bg=row_bg)
         actions.pack(side="right")
 
-        action_items = [
-            (
-                "≡",
-                lambda tid=task.id: self.open_notes_dialog(tid),
-                "#60A5FA" if task.notes.strip() else "#F1F5F9",
-                "#3B82F6" if task.notes.strip() else "#E2E8F0",
-                metrics["action_font"],
-                "white" if task.notes.strip() else "#CBD5E1",
-                "white" if task.notes.strip() else "#94A3B8",
-                True,
-            ),
-            (
-                "×",
-                lambda tid=task.id: self.delete_task(tid),
-                SECONDARY_BUTTON_BG,
-                SECONDARY_BUTTON_HOVER,
-                metrics["action_font"],
-                SECONDARY_BUTTON_FG,
-                SECONDARY_BUTTON_FG,
-                True,
-            ),
-        ]
-
-        for index, (label, command, button_bg, active_bg, font_name, fg_color, active_fg_color, enabled) in enumerate(action_items):
-            tk.Button(
-                actions,
-                text=label,
-                command=command if enabled else None,
-                font=font_name,
-                relief="flat",
-                bg=button_bg,
-                fg=fg_color,
-                activebackground=active_bg,
-                activeforeground=active_fg_color,
-                cursor="hand2" if enabled else "arrow",
-                width=2,
-                padx=metrics["action_padx"],
-                pady=metrics["action_pady"],
-                bd=0,
-            ).pack(
-                side="left",
-                padx=(metrics["action_pack_padx"], 8 if index == len(action_items) - 1 else metrics["action_pack_padx"]),
-            )
+        tk.Button(
+            actions,
+            text="×",
+            command=lambda tid=task.id: self.delete_task(tid),
+            font=metrics["action_font"],
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            activeforeground=SECONDARY_BUTTON_FG,
+            cursor="hand2",
+            width=2,
+            padx=metrics["action_padx"],
+            pady=metrics["action_pady"],
+            bd=0,
+        ).pack(side="left", padx=(metrics["action_pack_padx"], 8))
 
         if task.due_date:
             due_date_label = tk.Label(
@@ -4302,7 +4318,17 @@ class TaskManagerApp:
             title_entry.focus_set()
             title_entry.select_range(0, "end")
         else:
-            self.render_task_title_segments(title_line, task, title_font, title_color, row_bg)
+            self.render_task_title_segments(
+                title_line,
+                task,
+                title_font,
+                title_color,
+                row_bg,
+            )
+            if task.notes.strip():
+                notes_indicator = self.create_notes_badge(title_line, metrics)
+                notes_indicator.pack(side="left", padx=(6, 0))
+                notes_indicator.bind("<Button-1>", lambda _event, tid=task.id: self.open_notes_dialog(tid))
 
         self.bind_task_context_menu(row, task.id)
 
