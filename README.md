@@ -127,8 +127,9 @@ Saída esperada:
 - Links automáticos são específicos do arquivo de tarefas atual.
 - O arquivo de dados pode ficar em qualquer pasta acessível ao usuário, incluindo pastas sincronizadas pelo OneDrive.
 
-## Documentação interna
+## Documentação
 
-- [PROJECT_NOTES.md](PROJECT_NOTES.md): memória operacional do projeto
+- [PORTING_GUIDE.md](PORTING_GUIDE.md): especificação funcional para reimplementação em outra plataforma
+- [PROJECT_NOTES.md](PROJECT_NOTES.md): memória operacional e convenções de desenvolvimento
 
-Esse arquivo registra convenções de desenvolvimento, decisões de interface e contexto acumulado do app.
+Se a meta for portar o app sem acesso ao código-fonte, o documento principal é o `PORTING_GUIDE.md`.

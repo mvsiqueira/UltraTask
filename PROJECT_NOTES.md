@@ -19,6 +19,7 @@ O foco atual do projeto é produtividade pessoal com interface compacta, boa den
 - `settings.json`: preferências locais do app
 - `UltraTaskPortable.spec`: build portable via PyInstaller
 - `dist/UltraTaskPortable/`: saída do executável portable
+- `PORTING_GUIDE.md`: especificação funcional para reimplementação em outro stack
 
 ## Direção de produto
 
@@ -27,6 +28,7 @@ O foco atual do projeto é produtividade pessoal com interface compacta, boa den
 - Melhorias visuais são bem-vindas, mas não devem aumentar demais a altura útil das linhas da lista.
 - O app já usa seções manuais para agrupamento de tarefas.
 - Tags pertencem ao arquivo de tarefas atual, não são globais do aplicativo.
+- A documentação precisa ser suficiente para portar o app sem acesso ao código ou ao histórico das conversas.
 
 ## Convenções de desenvolvimento
 
@@ -153,7 +155,8 @@ Observação:
 2. Criar/ativar a `.venv`
 3. Instalar `requirements.txt`
 4. Ler este arquivo antes de continuar o desenvolvimento
-5. Rodar `app.py`
+5. Ler `PORTING_GUIDE.md` se a meta for reimplementar ou migrar de plataforma
+6. Rodar `app.py`
 
 ## Próximos passos em aberto
 
