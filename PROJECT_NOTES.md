@@ -76,6 +76,7 @@ Observação:
 - Notas com rich text
 - Checklist dentro do campo de notas
 - Build timestamp visível no app e compatível com versão portable
+- Tags e papéis com largura fixa opcional por item
 
 ## Notas sobre papéis
 
@@ -87,8 +88,16 @@ Observação:
   - estilo (`tag` ou `balão`)
   - prefixo
   - fonte
+  - tamanho opcional em caracteres para largura fixa
 - A configuração dos papéis é salva no próprio arquivo de tarefas.
 - Essa configuração não fica em `settings.json`.
+
+## Notas sobre tags
+
+- As tags são salvas no `tag_catalog` do arquivo de tarefas atual.
+- Cada tag possui nome, cor, ordem e tamanho opcional.
+- Quando o tamanho estiver em branco, a largura da tag continua automática.
+- Quando o tamanho estiver preenchido, a largura do chip passa a usar o valor fixo informado.
 
 ## Notas sobre links automáticos
 

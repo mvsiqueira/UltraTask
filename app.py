@@ -771,8 +771,8 @@ class TaskManagerApp:
         for label, command in (
             ("+ Tag", self.bulk_add_tag),
             ("- Tag", self.bulk_remove_tag),
-            ("Contato", self.bulk_set_contact),
             ("Designado", self.bulk_set_assignee),
+            ("Contato", self.bulk_set_contact),
             ("Marcar !", lambda: self.bulk_set_important(True)),
             ("Desmarcar !", lambda: self.bulk_set_important(False)),
             ("Excluir", self.bulk_delete_tasks),
@@ -1057,12 +1057,14 @@ class TaskManagerApp:
                 "style": ROLE_STYLE_BALLOON,
                 "prefix": "@",
                 "font": DEFAULT_ROLE_FONT,
+                "size": "",
             },
             "assignee": {
                 "color": DEFAULT_ASSIGNEE_COLOR,
                 "style": ROLE_STYLE_BALLOON,
                 "prefix": "→",
                 "font": DEFAULT_ROLE_FONT,
+                "size": "",
             },
         }
 
@@ -1078,12 +1080,27 @@ class TaskManagerApp:
         return "Tag" if self.normalize_role_style(value) == ROLE_STYLE_TAG else "Balão"
 
     def normalize_role_prefix(self, value: Any, default: str) -> str:
-        cleaned = str(value).strip()
-        return cleaned if cleaned else default
+        if value is None:
+            return default
+        return str(value).strip()
 
     def normalize_role_font(self, value: Any, default: str = DEFAULT_ROLE_FONT) -> str:
         cleaned = str(value).strip()
         return cleaned if cleaned else default
+
+    def normalize_optional_size(self, value: Any) -> int | None:
+        cleaned = str(value).strip()
+        if not cleaned:
+            return None
+        try:
+            parsed = int(cleaned)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0 else None
+
+    def size_display_value(self, value: Any) -> str:
+        normalized = self.normalize_optional_size(value)
+        return str(normalized) if normalized is not None else ""
 
     def role_definition(self, role_key: str) -> dict[str, str]:
         defaults = self.default_role_config()
@@ -1094,6 +1111,7 @@ class TaskManagerApp:
             "style": self.normalize_role_style(entry.get("style"), fallback["style"]),
             "prefix": self.normalize_role_prefix(entry.get("prefix"), fallback["prefix"]),
             "font": self.normalize_role_font(entry.get("font"), fallback["font"]),
+            "size": self.size_display_value(entry.get("size", fallback.get("size", ""))),
         }
 
     def load_role_config(self) -> dict[str, dict[str, str]]:
@@ -1123,6 +1141,7 @@ class TaskManagerApp:
                     "style": self.normalize_role_style(role_item.get("style"), config[role_key]["style"]),
                     "prefix": self.normalize_role_prefix(role_item.get("prefix"), config[role_key]["prefix"]),
                     "font": self.normalize_role_font(role_item.get("font"), config[role_key]["font"]),
+                    "size": self.size_display_value(role_item.get("size", config[role_key]["size"])),
                 }
             return config
 
@@ -1162,6 +1181,7 @@ class TaskManagerApp:
                 "name": name,
                 "color": self.normalize_color(item.get("color")),
                 "order": int(item.get("order", len(catalog))),
+                "size": self.size_display_value(item.get("size", "")),
             }
         self.reindex_tag_catalog(catalog)
         return catalog
@@ -1265,6 +1285,7 @@ class TaskManagerApp:
             "name": cleaned,
             "color": self.normalize_color(color),
             "order": self.next_tag_order(),
+            "size": "",
         }
         self.save_tag_catalog()
         return cleaned
@@ -1286,6 +1307,7 @@ class TaskManagerApp:
                         "name": cleaned,
                         "color": DEFAULT_TAG_COLOR,
                         "order": self.next_tag_order(),
+                        "size": "",
                     }
                     changed = True
 
@@ -1353,6 +1375,12 @@ class TaskManagerApp:
         if not entry:
             return DEFAULT_TAG_COLOR
         return entry["color"]
+
+    def get_tag_size(self, name: str) -> int | None:
+        entry = self.get_tag_entry(name)
+        if not entry:
+            return None
+        return self.normalize_optional_size(entry.get("size", ""))
 
     # Catálogo de links automáticos por regex, salvo junto ao arquivo de tarefas.
     def load_link_catalog(self) -> list[dict[str, Any]]:
@@ -1563,11 +1591,13 @@ class TaskManagerApp:
         prefix: str,
         style: str = ROLE_STYLE_BALLOON,
         font_family: str = DEFAULT_ROLE_FONT,
+        fixed_size: int | None = None,
     ) -> tk.Widget:
         display_text = f"{prefix} {text}".strip() if prefix.strip() else text
         chip_font = tkfont.Font(family=font_family, size=metrics["tag_font"][1])
+        width_chars = self.normalize_optional_size(fixed_size)
         if style == ROLE_STYLE_TAG:
-            return tk.Label(
+            label = tk.Label(
                 parent,
                 text=display_text,
                 font=(font_family, metrics["tag_font"][1]),
@@ -1577,10 +1607,15 @@ class TaskManagerApp:
                 pady=metrics["tag_pady"],
                 cursor="hand2",
             )
+            if width_chars is not None:
+                label.configure(width=width_chars, anchor="center")
+            return label
         text_width = chip_font.measure(display_text)
         text_height = chip_font.metrics("linespace")
         pad_x = int(metrics["tag_padx"])
         pad_y = int(metrics["tag_pady"])
+        if width_chars is not None:
+            text_width = chip_font.measure("M" * width_chars)
         width = text_width + (pad_x * 2)
         height = text_height + (pad_y * 2) + 2
 
@@ -2451,7 +2486,12 @@ class TaskManagerApp:
                 for role_key in ("contact", "assignee")
             },
             "tag_catalog": [
-                {"name": item["name"], "color": item["color"], "order": int(item.get("order", 0))}
+                {
+                    "name": item["name"],
+                    "color": item["color"],
+                    "order": int(item.get("order", 0)),
+                    "size": self.size_display_value(item.get("size", "")),
+                }
                 for item in self.sorted_tag_catalog()
             ],
             "link_catalog": [
@@ -3503,8 +3543,8 @@ class TaskManagerApp:
                 command=lambda tid=task_id: self.toggle_task_important(tid),
             )
             menu.add_command(label="Alterar tags", command=lambda tid=task_id: self.edit_task_tags(tid))
-            menu.add_command(label="Definir contato", command=lambda tid=task_id: self.set_task_contact(tid))
             menu.add_command(label="Definir designado", command=lambda tid=task_id: self.set_task_assignee(tid))
+            menu.add_command(label="Definir contato", command=lambda tid=task_id: self.set_task_contact(tid))
             menu.add_command(label="Definir data", command=lambda tid=task_id: self.open_due_date_dialog(tid))
             menu.add_command(label="Adicionar notas", command=lambda tid=task_id: self.open_notes_dialog(tid))
             menu.add_separator()
@@ -3894,8 +3934,8 @@ class TaskManagerApp:
     def open_role_manager(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Gerenciar papéis")
-        window.geometry("840x520")
-        window.minsize(800, 500)
+        window.geometry("900x540")
+        window.minsize(860, 520)
         window.configure(bg="#eef3f8")
         window.transient(self.root)
         window.grab_set()
@@ -3930,12 +3970,14 @@ class TaskManagerApp:
             "style": tk.StringVar(value=self.role_style_display(contact_config["style"])),
             "prefix": tk.StringVar(value=contact_config["prefix"]),
             "font": tk.StringVar(value=contact_config["font"]),
+            "size": tk.StringVar(value=contact_config["size"]),
         }
         assignee_vars = {
             "color": tk.StringVar(value=assignee_config["color"]),
             "style": tk.StringVar(value=self.role_style_display(assignee_config["style"])),
             "prefix": tk.StringVar(value=assignee_config["prefix"]),
             "font": tk.StringVar(value=assignee_config["font"]),
+            "size": tk.StringVar(value=assignee_config["size"]),
         }
 
         self.build_role_editor_section(panel, "assignee", "Designado", assignee_vars, column=0)
@@ -3992,6 +4034,7 @@ class TaskManagerApp:
         card.grid(row=0, column=column, sticky="nsew", padx=(16 if column == 0 else 8, 8 if column == 0 else 16), pady=16)
         card.grid_columnconfigure(0, weight=1)
         card.grid_columnconfigure(1, weight=1)
+        card.grid_columnconfigure(2, weight=1)
 
         tk.Label(
             card,
@@ -3999,7 +4042,7 @@ class TaskManagerApp:
             font=("Segoe UI Semibold", 11),
             bg="white",
             fg="#0f172a",
-        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        ).grid(row=0, column=0, columnspan=3, sticky="w")
 
         tk.Label(
             card,
@@ -4007,11 +4050,11 @@ class TaskManagerApp:
             font=("Segoe UI", 8),
             bg="white",
             fg="#64748b",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(12, 4))
 
         preview_row = tk.Frame(card, bg="white")
         preview_row.grid_columnconfigure(0, weight=1)
-        preview_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 18))
+        preview_row.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 18))
         preview_host = tk.Frame(
             preview_row,
             bg="#f8fbff",
@@ -4039,18 +4082,13 @@ class TaskManagerApp:
             cursor="hand2",
         ).grid(row=0, column=1, sticky="e")
 
-        controls_labels = tk.Frame(card, bg="white")
-        controls_labels.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
-        controls_labels.grid_columnconfigure(0, weight=1)
-        controls_labels.grid_columnconfigure(1, weight=1)
-
         tk.Label(
-            controls_labels,
+            card,
             text="Estilo",
             font=("Segoe UI", 8),
             bg="white",
             fg="#64748b",
-        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ).grid(row=3, column=0, sticky="w", pady=(0, 4))
         style_menu = tk.OptionMenu(
             card,
             role_vars["style"],
@@ -4072,12 +4110,19 @@ class TaskManagerApp:
         style_menu.grid(row=4, column=0, sticky="ew", padx=(0, 8))
 
         tk.Label(
-            controls_labels,
+            card,
             text="Prefixo",
             font=("Segoe UI", 8),
             bg="white",
             fg="#64748b",
-        ).grid(row=0, column=1, sticky="w")
+        ).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
+        tk.Label(
+            card,
+            text="Tamanho",
+            font=("Segoe UI", 8),
+            bg="white",
+            fg="#64748b",
+        ).grid(row=3, column=2, sticky="w", padx=(8, 0), pady=(0, 4))
         prefix_entry = tk.Entry(
             card,
             textvariable=role_vars["prefix"],
@@ -4091,13 +4136,26 @@ class TaskManagerApp:
         prefix_entry.grid(row=4, column=1, sticky="ew", ipady=5)
         prefix_entry.bind("<KeyRelease>", lambda _event: self.render_role_preview(preview_host, role_key, label, role_vars))
 
+        size_entry = tk.Entry(
+            card,
+            textvariable=role_vars["size"],
+            font=("Segoe UI", 9),
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            highlightcolor="#2563eb",
+            width=8,
+        )
+        size_entry.grid(row=4, column=2, sticky="ew", padx=(8, 0), ipady=5)
+        size_entry.bind("<KeyRelease>", lambda _event: self.render_role_preview(preview_host, role_key, label, role_vars))
+
         tk.Label(
             card,
             text="Fonte",
             font=("Segoe UI", 8),
             bg="white",
             fg="#64748b",
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(14, 4))
+        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(14, 4))
 
         font_entry = ttk.Combobox(
             card,
@@ -4106,7 +4164,7 @@ class TaskManagerApp:
             state="normal",
             values=("Segoe UI", "Arial", "Calibri", "Verdana", "Tahoma", "Trebuchet MS", "Consolas", "Courier New"),
         )
-        font_entry.grid(row=6, column=0, columnspan=2, sticky="ew", ipady=4)
+        font_entry.grid(row=6, column=0, columnspan=3, sticky="ew", ipady=4)
         font_entry.bind("<<ComboboxSelected>>", lambda _event: self.render_role_preview(preview_host, role_key, label, role_vars))
         font_entry.bind("<KeyRelease>", lambda _event: self.render_role_preview(preview_host, role_key, label, role_vars))
 
@@ -4122,6 +4180,7 @@ class TaskManagerApp:
             self.normalize_role_prefix(role_vars["prefix"].get(), ""),
             style=self.normalize_role_style(role_vars["style"].get()),
             font_family=self.normalize_role_font(role_vars["font"].get()),
+            fixed_size=self.normalize_optional_size(role_vars["size"].get()),
         )
         preview.pack(fill="both", expand=True, anchor="w")
 
@@ -4158,12 +4217,14 @@ class TaskManagerApp:
                 "style": self.normalize_role_style(contact_vars["style"].get(), defaults["contact"]["style"]),
                 "prefix": self.normalize_role_prefix(contact_vars["prefix"].get(), defaults["contact"]["prefix"]),
                 "font": self.normalize_role_font(contact_vars["font"].get(), defaults["contact"]["font"]),
+                "size": self.size_display_value(contact_vars["size"].get()),
             },
             "assignee": {
                 "color": self.normalize_hex_color(assignee_vars["color"].get(), defaults["assignee"]["color"]),
                 "style": self.normalize_role_style(assignee_vars["style"].get(), defaults["assignee"]["style"]),
                 "prefix": self.normalize_role_prefix(assignee_vars["prefix"].get(), defaults["assignee"]["prefix"]),
                 "font": self.normalize_role_font(assignee_vars["font"].get(), defaults["assignee"]["font"]),
+                "size": self.size_display_value(assignee_vars["size"].get()),
             },
         }
         self.save_role_config()
@@ -4173,8 +4234,8 @@ class TaskManagerApp:
     def open_tag_manager(self, on_close=None) -> None:
         window = tk.Toplevel(self.root)
         window.title("Gerenciar tags")
-        window.geometry("560x560")
-        window.minsize(500, 520)
+        window.geometry("660x580")
+        window.minsize(620, 540)
         window.configure(bg="#eef3f8")
         window.transient(self.root)
         window.grab_set()
@@ -4226,6 +4287,7 @@ class TaskManagerApp:
 
         name_var = tk.StringVar()
         color_var = tk.StringVar(value=DEFAULT_TAG_COLOR)
+        size_var = tk.StringVar()
 
         tk.Label(
             form,
@@ -4263,6 +4325,26 @@ class TaskManagerApp:
             cursor="hand2",
         )
         color_button.pack(side="left", padx=(10, 0))
+
+        tk.Label(
+            form_row,
+            text="Tamanho",
+            font=("Segoe UI", 9),
+            bg="white",
+            fg="#64748b",
+        ).pack(side="left", padx=(10, 6))
+
+        size_entry = tk.Entry(
+            form_row,
+            textvariable=size_var,
+            font=("Segoe UI", 10),
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            highlightcolor="#2563eb",
+            width=8,
+        )
+        size_entry.pack(side="left", ipady=8)
 
         list_panel = tk.Frame(content, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
         list_panel.grid(row=3, column=0, sticky="nsew", padx=24, pady=(0, 16))
@@ -4409,6 +4491,18 @@ class TaskManagerApp:
                 color_label.pack(side="left", padx=(10, 0))
                 bind_tag_list_mousewheel(color_label)
 
+                size_text = item.get("size", "")
+                if size_text:
+                    size_label = tk.Label(
+                        row,
+                        text=f"Largura {size_text}",
+                        font=("Segoe UI", 9),
+                        bg="white",
+                        fg="#64748b",
+                    )
+                    size_label.pack(side="left", padx=(10, 0))
+                    bind_tag_list_mousewheel(size_label)
+
                 color_action = tk.Button(
                     row,
                     text="Cor",
@@ -4424,6 +4518,22 @@ class TaskManagerApp:
                 )
                 color_action.pack(side="right")
                 bind_tag_list_mousewheel(color_action)
+
+                size_action = tk.Button(
+                    row,
+                    text="Tamanho",
+                    command=lambda name=item["name"]: self.update_tag_size(name, refresh_tags, refresh_main=False),
+                    font=("Segoe UI", 9),
+                    relief="flat",
+                    bg=SECONDARY_BUTTON_BG,
+                    fg=SECONDARY_BUTTON_FG,
+                    activebackground=SECONDARY_BUTTON_HOVER,
+                    padx=10,
+                    pady=6,
+                    cursor="hand2",
+                )
+                size_action.pack(side="right", padx=(0, 8))
+                bind_tag_list_mousewheel(size_action)
 
                 delete_action = tk.Button(
                     row,
@@ -4465,7 +4575,7 @@ class TaskManagerApp:
         tk.Button(
             footer,
             text="Adicionar tag",
-            command=lambda: self.create_tag(name_var, color_var, color_button, refresh_tags, refresh_main=False),
+            command=lambda: self.create_tag(name_var, color_var, size_var, color_button, refresh_tags, refresh_main=False),
             font=("Segoe UI Semibold", 10),
             relief="flat",
             bg=PRIMARY_BUTTON_BG,
@@ -4856,6 +4966,7 @@ class TaskManagerApp:
         self,
         name_var: tk.StringVar,
         color_var: tk.StringVar,
+        size_var: tk.StringVar,
         color_button: tk.Button,
         refresh_callback,
         refresh_main: bool = True,
@@ -4873,10 +4984,12 @@ class TaskManagerApp:
             "name": cleaned,
             "color": self.normalize_color(color_var.get()),
             "order": self.next_tag_order(),
+            "size": self.size_display_value(size_var.get()),
         }
         self.save_tag_catalog()
         name_var.set("")
         color_var.set(DEFAULT_TAG_COLOR)
+        size_var.set("")
         color_button.configure(
             bg=DEFAULT_TAG_COLOR,
             fg=self.contrast_text_color(DEFAULT_TAG_COLOR),
@@ -4936,6 +5049,31 @@ class TaskManagerApp:
             return
 
         item["color"] = self.normalize_color(chosen)
+        self.save_tag_catalog()
+        if refresh_main:
+            self.render_tasks()
+        refresh_callback()
+
+    def update_tag_size(self, name: str, refresh_callback, refresh_main: bool = True) -> None:
+        item = self.get_tag_entry(name)
+        if not item:
+            return
+
+        answer = simpledialog.askstring(
+            "Tamanho da tag",
+            "Informe a largura fixa da tag em caracteres.\nDeixe em branco para largura automática.",
+            initialvalue=self.size_display_value(item.get("size", "")),
+            parent=self.root,
+        )
+        if answer is None:
+            return
+
+        cleaned_size = self.size_display_value(answer)
+        if answer.strip() and not cleaned_size:
+            messagebox.showinfo("Tags", "Informe um número inteiro maior que zero.")
+            return
+
+        item["size"] = cleaned_size
         self.save_tag_catalog()
         if refresh_main:
             self.render_tasks()
@@ -5173,6 +5311,9 @@ class TaskManagerApp:
                     pady=metrics["tag_pady"],
                     cursor="hand2",
                 )
+                tag_size = self.get_tag_size(tag)
+                if tag_size is not None:
+                    pill.configure(width=tag_size, anchor="center")
                 pill.pack(side="left", padx=metrics["tag_pack_padx"])
                 pill.bind("<Button-1>", lambda _event, tid=task.id: self.edit_task_tags(tid))
                 pill.bind("<Button-3>", lambda event, value=tag: self.show_tag_chip_context_menu(event, value))
@@ -5187,6 +5328,7 @@ class TaskManagerApp:
                 assignee_role["prefix"],
                 style=assignee_role["style"],
                 font_family=assignee_role["font"],
+                fixed_size=assignee_role["size"],
             )
             assignee_pill.pack(side="left", padx=metrics["tag_pack_padx"])
             assignee_pill.bind("<Button-1>", lambda _event, tid=task.id: self.set_task_assignee(tid))
@@ -5205,6 +5347,7 @@ class TaskManagerApp:
                 contact_role["prefix"],
                 style=contact_role["style"],
                 font_family=contact_role["font"],
+                fixed_size=contact_role["size"],
             )
             contact_pill.pack(side="left", padx=metrics["tag_pack_padx"])
             contact_pill.bind("<Button-1>", lambda _event, tid=task.id: self.set_task_contact(tid))

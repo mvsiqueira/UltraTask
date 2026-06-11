@@ -18,6 +18,7 @@ App desktop para Windows, feito em Python + Tkinter, voltado para gerenciamento 
   - estilo
   - prefixo
   - fonte
+  - tamanho fixo opcional
 - Links automáticos em títulos de tarefas por regex
 - Filtros por:
   - contato
@@ -100,7 +101,7 @@ Pela tela `Configurações`, é possível:
 
 As telas `Gerenciar tags`, `Gerenciar papéis` e `Gerenciar links` ficam disponíveis diretamente na barra lateral.
 
-Os papéis `Contato` e `Designado` são configurados na tela `Gerenciar papéis` e ficam salvos no próprio arquivo de tarefas, incluindo cor, estilo, prefixo e fonte.
+Os papéis `Contato` e `Designado` são configurados na tela `Gerenciar papéis` e ficam salvos no próprio arquivo de tarefas, incluindo cor, estilo, prefixo, fonte e tamanho fixo opcional.
 
 ## Build portable
 
@@ -116,7 +117,9 @@ Saída esperada:
 - A reordenação da lista principal funciona apenas com os filtros limpos.
 - O botão `Recarregar` relê o arquivo configurado no disco.
 - Tags são específicas do arquivo de tarefas atual.
+- Tags também podem ter largura fixa opcional, definida por item no cadastro.
 - As cores de `Contato` e `Designado` também são específicas do arquivo atual.
+- `Contato` e `Designado` também aceitam largura fixa opcional, definida por papel.
 - Links automáticos são específicos do arquivo de tarefas atual.
 - O arquivo de dados pode ficar em qualquer pasta acessível ao usuário, incluindo pastas sincronizadas pelo OneDrive.
 
