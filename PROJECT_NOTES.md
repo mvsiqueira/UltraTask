@@ -55,24 +55,40 @@ Observação:
 
 - Tarefas com:
   - título
-  - responsável
+  - contato
+  - designado
   - tags
   - data
   - importante
   - notas
 - Seções manuais com cor personalizada
 - Filtros por:
-  - responsável
+  - contato
+  - designado
   - importância
   - tag
 - Botão para limpar filtros
 - Links automáticos em títulos de tarefas por regex
 - Menu lateral compacto com ações principais
 - Tela de tags com ordenação manual
+- Tela de papéis com cores por arquivo
 - Tela de links automáticos
 - Notas com rich text
 - Checklist dentro do campo de notas
 - Build timestamp visível no app e compatível com versão portable
+
+## Notas sobre papéis
+
+- O papel antigo de `responsável` foi renomeado para `contato`.
+- Existe um segundo papel chamado `designado`.
+- Os papéis são configurados em `Gerenciar papéis`.
+- Cada papel possui:
+  - cor
+  - estilo (`tag` ou `balão`)
+  - prefixo
+  - fonte
+- A configuração dos papéis é salva no próprio arquivo de tarefas.
+- Essa configuração não fica em `settings.json`.
 
 ## Notas sobre links automáticos
 

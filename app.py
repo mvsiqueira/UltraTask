@@ -37,8 +37,12 @@ def resolve_build_timestamp() -> str:
 
 BUILD_TIMESTAMP = resolve_build_timestamp()
 DEFAULT_TAG_COLOR = "#2563EB"
-DEFAULT_RESPONSIBLE_COLOR = "#0F766E"
+DEFAULT_CONTACT_COLOR = "#0F766E"
+DEFAULT_ASSIGNEE_COLOR = "#7C3AED"
 DEFAULT_SECTION_COLOR = "#B45309"
+DEFAULT_ROLE_FONT = "Segoe UI"
+ROLE_STYLE_BALLOON = "balloon"
+ROLE_STYLE_TAG = "tag"
 PRIMARY_BUTTON_BG = "#2563EB"
 PRIMARY_BUTTON_HOVER = "#1D4ED8"
 SECONDARY_BUTTON_BG = "#DBEAFE"
@@ -222,12 +226,12 @@ class AppSettings:
         self.save()
 
     def responsible_color(self) -> str:
-        raw_value = str(self.data.get("responsible_color", DEFAULT_RESPONSIBLE_COLOR)).strip()
+        raw_value = str(self.data.get("responsible_color", DEFAULT_CONTACT_COLOR)).strip()
         if isinstance(raw_value, str) and len(raw_value) == 7 and raw_value.startswith("#"):
             hex_part = raw_value[1:]
             if all(char in "0123456789abcdefABCDEF" for char in hex_part):
                 return f"#{hex_part.upper()}"
-        return DEFAULT_RESPONSIBLE_COLOR
+        return DEFAULT_CONTACT_COLOR
 
     def set_responsible_color(self, color: str) -> None:
         self.data["responsible_color"] = color
@@ -248,7 +252,8 @@ class Task:
     due_date: str = ""
     notes: str = ""
     notes_rich: dict[str, Any] | None = None
-    responsible: str = ""
+    contact: str = ""
+    assignee: str = ""
     tags: list[str] = field(default_factory=list)
 
 
@@ -264,8 +269,8 @@ class TaskManagerApp:
         self.settings = AppSettings()
         self.tasks_file = self.settings.tasks_file()
         self.layout_mode = self.settings.layout_mode()
-        self.responsible_color = self.settings.responsible_color()
         self.file_title = self.load_file_title()
+        self.role_config = self.load_role_config()
         self.tag_catalog = self.load_tag_catalog()
         self.link_catalog = self.load_link_catalog()
         self.compiled_link_rules: list[tuple[dict[str, Any], re.Pattern[str]]] | None = None
@@ -297,6 +302,7 @@ class TaskManagerApp:
         self.bulk_count_var = tk.StringVar(value="")
 
         self.responsible_filter_var = tk.StringVar(value="Todos")
+        self.assignee_filter_var = tk.StringVar(value="Todos")
         self.tag_filter_var = tk.StringVar(value="Todas")
         self.important_filter_var = tk.StringVar(value="Todas")
         self.storage_status_var = tk.StringVar(value=self.storage_status_text())
@@ -430,7 +436,7 @@ class TaskManagerApp:
         controls = tk.Frame(content_area, bg="#eef3f8")
         controls.pack(fill="x")
 
-        # Painel compacto de filtros combinando responsável, importância e tag.
+        # Painel compacto de filtros combinando contato, designado, importância e tag.
         filter_shell = tk.Frame(controls, bg="#eef3f8")
         filter_shell.pack(fill="x")
 
@@ -481,7 +487,34 @@ class TaskManagerApp:
 
         tk.Label(
             filter_panel,
-            text="Responsável",
+            text="Designado",
+            font=("Segoe UI", 9),
+            bg="#f8fbff",
+            fg="#334155",
+        ).pack(side="left", padx=(0, 6))
+
+        self.assignee_filter_menu = tk.OptionMenu(
+            filter_panel,
+            self.assignee_filter_var,
+            "Todos",
+            command=lambda _value: self.render_tasks(),
+        )
+        self.assignee_filter_menu.config(
+            font=("Segoe UI", 9),
+            relief="flat",
+            bg="white",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            activebackground="white",
+            width=10,
+            anchor="w",
+        )
+        self.assignee_filter_menu["menu"].config(font=("Segoe UI", 9))
+        self.assignee_filter_menu.pack(side="left", padx=(0, 12))
+
+        tk.Label(
+            filter_panel,
+            text="Contato",
             font=("Segoe UI", 9),
             bg="#f8fbff",
             fg="#334155",
@@ -616,6 +649,15 @@ class TaskManagerApp:
                 "0111110",
                 "0011100",
             ],
+            "roles": [
+                "1100011",
+                "1100011",
+                "0110110",
+                "0011100",
+                "0011100",
+                "0100010",
+                "1000001",
+            ],
             "about": [
                 "0011100",
                 "0100010",
@@ -673,6 +715,7 @@ class TaskManagerApp:
         # Grupo secundário de navegação/configuração da barra lateral.
         for index, (icon_key, tooltip_text, command) in enumerate((
             ("tags", "Gerenciar tags", self.open_tag_manager),
+            ("roles", "Gerenciar papéis", self.open_role_manager),
             ("links", "Gerenciar links", self.open_link_manager),
             ("settings", "Configurações", self.open_settings_window),
             ("about", "Sobre", self.open_about_window),
@@ -728,7 +771,8 @@ class TaskManagerApp:
         for label, command in (
             ("+ Tag", self.bulk_add_tag),
             ("- Tag", self.bulk_remove_tag),
-            ("Responsável", self.bulk_set_responsible),
+            ("Contato", self.bulk_set_contact),
+            ("Designado", self.bulk_set_assignee),
             ("Marcar !", lambda: self.bulk_set_important(True)),
             ("Desmarcar !", lambda: self.bulk_set_important(False)),
             ("Excluir", self.bulk_delete_tasks),
@@ -1006,6 +1050,93 @@ class TaskManagerApp:
             self.save_inline_file_title()
 
     # Carregamento e manutenção do catálogo de tags com cor e ordem de exibição.
+    def default_role_config(self) -> dict[str, dict[str, str]]:
+        return {
+            "contact": {
+                "color": self.settings.responsible_color(),
+                "style": ROLE_STYLE_BALLOON,
+                "prefix": "@",
+                "font": DEFAULT_ROLE_FONT,
+            },
+            "assignee": {
+                "color": DEFAULT_ASSIGNEE_COLOR,
+                "style": ROLE_STYLE_BALLOON,
+                "prefix": "→",
+                "font": DEFAULT_ROLE_FONT,
+            },
+        }
+
+    def normalize_role_style(self, value: Any, default: str = ROLE_STYLE_BALLOON) -> str:
+        cleaned = str(value).strip().lower()
+        if cleaned in {ROLE_STYLE_BALLOON, ROLE_STYLE_TAG, "balão", "balao"}:
+            if cleaned in {"balão", "balao"}:
+                return ROLE_STYLE_BALLOON
+            return cleaned
+        return default
+
+    def role_style_display(self, value: Any) -> str:
+        return "Tag" if self.normalize_role_style(value) == ROLE_STYLE_TAG else "Balão"
+
+    def normalize_role_prefix(self, value: Any, default: str) -> str:
+        cleaned = str(value).strip()
+        return cleaned if cleaned else default
+
+    def normalize_role_font(self, value: Any, default: str = DEFAULT_ROLE_FONT) -> str:
+        cleaned = str(value).strip()
+        return cleaned if cleaned else default
+
+    def role_definition(self, role_key: str) -> dict[str, str]:
+        defaults = self.default_role_config()
+        fallback = defaults.get(role_key, defaults["contact"])
+        entry = self.role_config.get(role_key, {})
+        return {
+            "color": self.normalize_hex_color(entry.get("color"), fallback["color"]),
+            "style": self.normalize_role_style(entry.get("style"), fallback["style"]),
+            "prefix": self.normalize_role_prefix(entry.get("prefix"), fallback["prefix"]),
+            "font": self.normalize_role_font(entry.get("font"), fallback["font"]),
+        }
+
+    def load_role_config(self) -> dict[str, dict[str, str]]:
+        fallback_contact = self.settings.responsible_color()
+        config = self.default_role_config()
+        config["contact"]["color"] = fallback_contact
+        if not self.tasks_file.exists():
+            return config
+
+        try:
+            raw_data = json.loads(self.tasks_file.read_text(encoding="utf-8"))
+            if not isinstance(raw_data, dict):
+                return config
+            raw_config = raw_data.get("role_config", {})
+            if not isinstance(raw_config, dict):
+                return config
+        except json.JSONDecodeError:
+            return config
+
+        if "contact" in raw_config or "assignee" in raw_config:
+            for role_key in ("contact", "assignee"):
+                role_item = raw_config.get(role_key, {})
+                if not isinstance(role_item, dict):
+                    continue
+                config[role_key] = {
+                    "color": self.normalize_hex_color(role_item.get("color"), config[role_key]["color"]),
+                    "style": self.normalize_role_style(role_item.get("style"), config[role_key]["style"]),
+                    "prefix": self.normalize_role_prefix(role_item.get("prefix"), config[role_key]["prefix"]),
+                    "font": self.normalize_role_font(role_item.get("font"), config[role_key]["font"]),
+                }
+            return config
+
+        # Compatibilidade com a versão anterior que salvava apenas as duas cores.
+        config["contact"]["color"] = self.normalize_hex_color(raw_config.get("contact_color"), fallback_contact)
+        config["assignee"]["color"] = self.normalize_hex_color(
+            raw_config.get("assignee_color"),
+            DEFAULT_ASSIGNEE_COLOR,
+        )
+        return config
+
+    def save_role_config(self) -> None:
+        self.save_tasks()
+
     def load_tag_catalog(self) -> dict[str, dict]:
         catalog: dict[str, dict] = {}
         source_items: list[dict] = []
@@ -1107,12 +1238,15 @@ class TaskManagerApp:
     def clean_tag_name(self, name: str) -> str:
         return str(name).strip()
 
-    def normalize_color(self, value: str | None) -> str:
+    def normalize_hex_color(self, value: str | None, default: str) -> str:
         if isinstance(value, str) and len(value) == 7 and value.startswith("#"):
             hex_part = value[1:]
             if all(char in "0123456789abcdefABCDEF" for char in hex_part):
                 return f"#{hex_part.upper()}"
-        return DEFAULT_TAG_COLOR
+        return default
+
+    def normalize_color(self, value: str | None) -> str:
+        return self.normalize_hex_color(value, DEFAULT_TAG_COLOR)
 
     def register_tag(self, name: str, color: str | None = None) -> str | None:
         cleaned = self.clean_tag_name(name)
@@ -1171,14 +1305,24 @@ class TaskManagerApp:
                 task.section_color = normalized_section_color
                 changed = True
             if self.is_section(task):
-                if task.tags or task.completed or task.important or task.due_date or task.notes.strip() or task.notes_rich or task.responsible:
+                if (
+                    task.tags
+                    or task.completed
+                    or task.important
+                    or task.due_date
+                    or task.notes.strip()
+                    or task.notes_rich
+                    or task.contact
+                    or task.assignee
+                ):
                     task.tags = []
                     task.completed = False
                     task.important = False
                     task.due_date = ""
                     task.notes = ""
                     task.notes_rich = None
-                    task.responsible = ""
+                    task.contact = ""
+                    task.assignee = ""
                     changed = True
                 continue
             normalized: list[str] = []
@@ -1410,9 +1554,29 @@ class TaskManagerApp:
         ]
         canvas.create_polygon(points, smooth=True, fill=fill, outline=fill)
 
-    def create_responsible_chip(self, parent: tk.Widget, text: str, metrics: dict[str, object]) -> tk.Canvas:
-        display_text = f"@ {text}"
-        chip_font = tkfont.Font(family=metrics["tag_font"][0], size=metrics["tag_font"][1])
+    def create_role_chip(
+        self,
+        parent: tk.Widget,
+        text: str,
+        metrics: dict[str, object],
+        fill_color: str,
+        prefix: str,
+        style: str = ROLE_STYLE_BALLOON,
+        font_family: str = DEFAULT_ROLE_FONT,
+    ) -> tk.Widget:
+        display_text = f"{prefix} {text}".strip() if prefix.strip() else text
+        chip_font = tkfont.Font(family=font_family, size=metrics["tag_font"][1])
+        if style == ROLE_STYLE_TAG:
+            return tk.Label(
+                parent,
+                text=display_text,
+                font=(font_family, metrics["tag_font"][1]),
+                bg=fill_color,
+                fg=self.contrast_text_color(fill_color),
+                padx=metrics["tag_padx"],
+                pady=metrics["tag_pady"],
+                cursor="hand2",
+            )
         text_width = chip_font.measure(display_text)
         text_height = chip_font.metrics("linespace")
         pad_x = int(metrics["tag_padx"])
@@ -1436,13 +1600,13 @@ class TaskManagerApp:
             width - 1,
             height - 1,
             radius=max(8, height // 2),
-            fill=self.responsible_color,
+            fill=fill_color,
         )
         canvas.create_text(
             width // 2,
             height // 2,
             text=display_text,
-            fill=self.contrast_text_color(self.responsible_color),
+            fill=self.contrast_text_color(fill_color),
             font=chip_font,
         )
         return canvas
@@ -2220,6 +2384,29 @@ class TaskManagerApp:
 
         return self.default_file_title()
 
+    def task_from_payload(self, item: dict[str, Any]) -> Task:
+        payload = dict(item)
+        legacy_contact = str(payload.pop("responsible", "")).strip()
+        if "contact" not in payload:
+            payload["contact"] = legacy_contact
+        payload.setdefault("assignee", "")
+        allowed_keys = {
+            "id",
+            "title",
+            "item_type",
+            "section_color",
+            "completed",
+            "important",
+            "due_date",
+            "notes",
+            "notes_rich",
+            "contact",
+            "assignee",
+            "tags",
+        }
+        normalized_payload = {key: payload[key] for key in allowed_keys if key in payload}
+        return Task(**normalized_payload)
+
     def load_tasks(self) -> list[Task]:
         if not self.tasks_file.exists():
             sample = [
@@ -2235,12 +2422,12 @@ class TaskManagerApp:
             # Accept both the current wrapped payload (title/tasks/tag_catalog)
             # and the older plain-list format used by the first versions.
             if isinstance(data, list):
-                return [Task(**item) for item in data]
+                return [self.task_from_payload(item) for item in data if isinstance(item, dict)]
 
             if isinstance(data, dict):
                 raw_tasks = data.get("tasks", [])
                 if isinstance(raw_tasks, list):
-                    return [Task(**item) for item in raw_tasks]
+                    return [self.task_from_payload(item) for item in raw_tasks if isinstance(item, dict)]
 
             raise TypeError
         except (json.JSONDecodeError, TypeError):
@@ -2259,6 +2446,10 @@ class TaskManagerApp:
         payload = {
             "title": self.file_title.strip() or self.default_file_title(),
             "tasks": [asdict(task) for task in current],
+            "role_config": {
+                role_key: self.role_definition(role_key)
+                for role_key in ("contact", "assignee")
+            },
             "tag_catalog": [
                 {"name": item["name"], "color": item["color"], "order": int(item.get("order", 0))}
                 for item in self.sorted_tag_catalog()
@@ -2282,18 +2473,32 @@ class TaskManagerApp:
     # Sincronização dos filtros e coleta de valores disponíveis no arquivo atual.
     def refresh_filter_options(self) -> bool:
         selection_changed = False
-        responsible_menu = self.responsible_filter_menu["menu"]
-        responsible_menu.delete(0, "end")
+        contact_menu = self.responsible_filter_menu["menu"]
+        contact_menu.delete(0, "end")
 
-        responsible_options = ["Todos", *sorted(self.collect_responsibles())]
-        for option in responsible_options:
-            responsible_menu.add_command(
+        contact_options = ["Todos", *sorted(self.collect_contacts())]
+        for option in contact_options:
+            contact_menu.add_command(
                 label=option,
                 command=lambda value=option: self.set_responsible_filter(value),
             )
 
-        if self.responsible_filter_var.get() not in responsible_options:
+        if self.responsible_filter_var.get() not in contact_options:
             self.responsible_filter_var.set("Todos")
+            selection_changed = True
+
+        assignee_menu = self.assignee_filter_menu["menu"]
+        assignee_menu.delete(0, "end")
+
+        assignee_options = ["Todos", *sorted(self.collect_assignees())]
+        for option in assignee_options:
+            assignee_menu.add_command(
+                label=option,
+                command=lambda value=option: self.set_assignee_filter(value),
+            )
+
+        if self.assignee_filter_var.get() not in assignee_options:
+            self.assignee_filter_var.set("Todos")
             selection_changed = True
 
         important_menu = self.important_filter_menu["menu"]
@@ -2333,6 +2538,10 @@ class TaskManagerApp:
         self.responsible_filter_var.set(value)
         self.render_tasks()
 
+    def set_assignee_filter(self, value: str) -> None:
+        self.assignee_filter_var.set(value)
+        self.render_tasks()
+
     def set_tag_filter(self, value: str) -> None:
         self.tag_filter_var.set(value)
         self.render_tasks()
@@ -2341,15 +2550,23 @@ class TaskManagerApp:
         self.important_filter_var.set(value)
         self.render_tasks()
 
-    def apply_chip_filters(self, responsible: str | None = None, tag: str | None = None) -> None:
-        if responsible is not None:
-            self.responsible_filter_var.set(responsible)
+    def apply_chip_filters(
+        self,
+        contact: str | None = None,
+        assignee: str | None = None,
+        tag: str | None = None,
+    ) -> None:
+        if contact is not None:
+            self.responsible_filter_var.set(contact)
+        if assignee is not None:
+            self.assignee_filter_var.set(assignee)
         if tag is not None:
             self.tag_filter_var.set(tag)
         self.render_tasks()
 
     def clear_filters(self) -> None:
         self.responsible_filter_var.set("Todos")
+        self.assignee_filter_var.set("Todos")
         self.important_filter_var.set("Todas")
         self.tag_filter_var.set("Todas")
         self.render_tasks()
@@ -2585,22 +2802,40 @@ class TaskManagerApp:
             task.tags = [tag for tag in task.tags if tag.lower() != tag_key]
         self.finish_bulk_update()
 
-    def bulk_set_responsible(self) -> None:
+    def bulk_set_contact(self) -> None:
         tasks = self.require_bulk_tasks()
         if not tasks:
             return
         answer = simpledialog.askstring(
-            "Definir responsável",
-            "Informe o responsável para as tarefas selecionadas:",
+            "Definir contato",
+            "Informe o contato para as tarefas selecionadas:",
             parent=self.root,
         )
         if answer is None:
             return
-        responsible = answer.strip()
-        if not self.confirm_bulk_action(f"Definir responsável '{responsible or '(vazio)'}'", len(tasks)):
+        contact = answer.strip()
+        if not self.confirm_bulk_action(f"Definir contato '{contact or '(vazio)'}'", len(tasks)):
             return
         for task in tasks:
-            task.responsible = responsible
+            task.contact = contact
+        self.finish_bulk_update()
+
+    def bulk_set_assignee(self) -> None:
+        tasks = self.require_bulk_tasks()
+        if not tasks:
+            return
+        answer = simpledialog.askstring(
+            "Definir designado",
+            "Informe o designado para as tarefas selecionadas:",
+            parent=self.root,
+        )
+        if answer is None:
+            return
+        assignee = answer.strip()
+        if not self.confirm_bulk_action(f"Definir designado '{assignee or '(vazio)'}'", len(tasks)):
+            return
+        for task in tasks:
+            task.assignee = assignee
         self.finish_bulk_update()
 
     def bulk_set_important(self, should_mark: bool) -> None:
@@ -2645,20 +2880,31 @@ class TaskManagerApp:
             tags.update(tag for tag in task.tags if tag.strip())
         return tags
 
-    def collect_responsibles(self) -> set[str]:
-        responsibles: dict[str, str] = {}
+    def collect_contacts(self) -> set[str]:
+        contacts: dict[str, str] = {}
         for task in self.tasks:
             if self.is_section(task):
                 continue
-            cleaned = task.responsible.strip()
+            cleaned = task.contact.strip()
             if cleaned:
-                responsibles.setdefault(cleaned.lower(), cleaned)
-        return set(responsibles.values())
+                contacts.setdefault(cleaned.lower(), cleaned)
+        return set(contacts.values())
 
-    def filter_options_signature(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    def collect_assignees(self) -> set[str]:
+        assignees: dict[str, str] = {}
+        for task in self.tasks:
+            if self.is_section(task):
+                continue
+            cleaned = task.assignee.strip()
+            if cleaned:
+                assignees.setdefault(cleaned.lower(), cleaned)
+        return set(assignees.values())
+
+    def filter_options_signature(self) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
         tag_names = tuple(item["name"] for item in self.sorted_tag_catalog())
-        responsibles = tuple(sorted(self.collect_responsibles(), key=str.lower))
-        return tag_names, responsibles
+        contacts = tuple(sorted(self.collect_contacts(), key=str.lower))
+        assignees = tuple(sorted(self.collect_assignees(), key=str.lower))
+        return tag_names, contacts, assignees
 
     def is_section(self, task: Task | None) -> bool:
         return bool(task and task.item_type == "section")
@@ -2674,10 +2920,16 @@ class TaskManagerApp:
         return "white", "#dbe3ec"
 
     def filtered_tasks(self) -> list[Task]:
-        selected_responsible = self.responsible_filter_var.get()
+        selected_contact = self.responsible_filter_var.get()
+        selected_assignee = self.assignee_filter_var.get()
         selected_important = self.important_filter_var.get()
         selected_tag = self.tag_filter_var.get()
-        if selected_responsible == "Todos" and selected_important == "Todas" and selected_tag == "Todas":
+        if (
+            selected_contact == "Todos"
+            and selected_assignee == "Todos"
+            and selected_important == "Todas"
+            and selected_tag == "Todas"
+        ):
             return self.tasks
 
         # Sections are injected lazily: a title row only appears if at least one
@@ -2685,7 +2937,8 @@ class TaskManagerApp:
         visible: list[Task] = []
         current_section: Task | None = None
         section_added = False
-        selected_responsible_key = selected_responsible.lower()
+        selected_contact_key = selected_contact.lower()
+        selected_assignee_key = selected_assignee.lower()
 
         for task in self.tasks:
             if self.is_section(task):
@@ -2693,7 +2946,10 @@ class TaskManagerApp:
                 section_added = False
                 continue
 
-            if selected_responsible != "Todos" and task.responsible.strip().lower() != selected_responsible_key:
+            if selected_contact != "Todos" and task.contact.strip().lower() != selected_contact_key:
+                continue
+
+            if selected_assignee != "Todos" and task.assignee.strip().lower() != selected_assignee_key:
                 continue
 
             if selected_important == "Importantes" and not task.important:
@@ -3172,30 +3428,48 @@ class TaskManagerApp:
             notes=task.notes,
             notes_rich=json.loads(json.dumps(task.notes_rich)) if task.notes_rich is not None else None,
             tags=list(task.tags),
-            responsible=task.responsible,
+            contact=task.contact,
+            assignee=task.assignee,
         )
         insert_at = current_index + 1 if current_index != -1 else len(self.tasks)
         self.tasks.insert(insert_at, copied_task)
         self.persist_and_refresh()
 
-    def set_task_responsible(self, task_id: str) -> None:
+    def set_task_contact(self, task_id: str) -> None:
         task = self.find_task(task_id)
         if not task or self.is_section(task):
             return
 
         answer = simpledialog.askstring(
-            "Definir responsável",
-            "Informe o responsável da tarefa:",
-            initialvalue=task.responsible,
+            "Definir contato",
+            "Informe o contato da tarefa:",
+            initialvalue=task.contact,
             parent=self.root,
         )
         if answer is None:
             return
 
         before_signature = self.filter_options_signature()
-        task.responsible = answer.strip()
+        task.contact = answer.strip()
         refresh_filters = self.filter_options_signature() != before_signature
         self.persist_and_refresh(preserve_scroll=True, refresh_filters=refresh_filters, task_id=task_id)
+
+    def set_task_assignee(self, task_id: str) -> None:
+        task = self.find_task(task_id)
+        if not task or self.is_section(task):
+            return
+
+        answer = simpledialog.askstring(
+            "Definir designado",
+            "Informe o designado da tarefa:",
+            initialvalue=task.assignee,
+            parent=self.root,
+        )
+        if answer is None:
+            return
+
+        task.assignee = answer.strip()
+        self.persist_and_refresh(preserve_scroll=True, refresh_filters=False, task_id=task_id)
 
     def set_section_color(self, task_id: str) -> None:
         task = self.find_task(task_id)
@@ -3229,7 +3503,8 @@ class TaskManagerApp:
                 command=lambda tid=task_id: self.toggle_task_important(tid),
             )
             menu.add_command(label="Alterar tags", command=lambda tid=task_id: self.edit_task_tags(tid))
-            menu.add_command(label="Definir responsável", command=lambda tid=task_id: self.set_task_responsible(tid))
+            menu.add_command(label="Definir contato", command=lambda tid=task_id: self.set_task_contact(tid))
+            menu.add_command(label="Definir designado", command=lambda tid=task_id: self.set_task_assignee(tid))
             menu.add_command(label="Definir data", command=lambda tid=task_id: self.open_due_date_dialog(tid))
             menu.add_command(label="Adicionar notas", command=lambda tid=task_id: self.open_notes_dialog(tid))
             menu.add_separator()
@@ -3253,12 +3528,23 @@ class TaskManagerApp:
         menu.grab_release()
         return "break"
 
-    def show_responsible_chip_context_menu(self, event, responsible_name: str) -> str:
+    def show_contact_chip_context_menu(self, event, contact_name: str) -> str:
         menu = tk.Menu(self.root, tearoff=0)
         menu.configure(font=("Segoe UI", 10))
         menu.add_command(
-            label=f"Filtrar por responsável {responsible_name}",
-            command=lambda value=responsible_name: self.apply_chip_filters(responsible=value),
+            label=f"Filtrar por contato {contact_name}",
+            command=lambda value=contact_name: self.apply_chip_filters(contact=value),
+        )
+        menu.tk_popup(event.x_root, event.y_root)
+        menu.grab_release()
+        return "break"
+
+    def show_assignee_chip_context_menu(self, event, assignee_name: str) -> str:
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.configure(font=("Segoe UI", 10))
+        menu.add_command(
+            label=f"Filtrar por designado {assignee_name}",
+            command=lambda value=assignee_name: self.apply_chip_filters(assignee=value),
         )
         menu.tk_popup(event.x_root, event.y_root)
         menu.grab_release()
@@ -3275,6 +3561,7 @@ class TaskManagerApp:
     def filters_are_clear(self) -> bool:
         return (
             self.responsible_filter_var.get() == "Todos"
+            and self.assignee_filter_var.get() == "Todos"
             and self.important_filter_var.get() == "Todas"
             and self.tag_filter_var.get() == "Todas"
         )
@@ -3339,6 +3626,7 @@ class TaskManagerApp:
         self.render_tasks(preserve_scroll=preserve_scroll)
 
     def reload_tasks_from_disk(self) -> None:
+        self.role_config = self.load_role_config()
         self.tasks = self.load_tasks()
         self.link_catalog = self.load_link_catalog()
         self.compiled_link_rules = None
@@ -3351,8 +3639,8 @@ class TaskManagerApp:
     def open_settings_window(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Configurações")
-        window.geometry("680x460")
-        window.minsize(620, 440)
+        window.geometry("680x370")
+        window.minsize(620, 350)
         window.configure(bg="#eef3f8")
         window.transient(self.root)
         window.grab_set()
@@ -3371,7 +3659,6 @@ class TaskManagerApp:
 
         file_path_var = tk.StringVar(value=str(self.tasks_file))
         layout_var = tk.StringVar(value="Compacto" if self.layout_mode == "compact" else "Normal")
-        responsible_color_var = tk.StringVar(value=self.responsible_color)
 
         tk.Label(
             panel,
@@ -3442,49 +3729,13 @@ class TaskManagerApp:
             cursor="hand2",
         ).pack(side="left", padx=(16, 0))
 
-        tk.Label(
-            panel,
-            text="Cor do responsável",
-            font=("Segoe UI Semibold", 10),
-            bg="white",
-            fg="#0f172a",
-        ).pack(anchor="w", padx=16, pady=(4, 8))
-
-        responsible_row = tk.Frame(panel, bg="white")
-        responsible_row.pack(fill="x", padx=16, pady=(0, 16))
-
-        responsible_preview = tk.Label(
-            responsible_row,
-            text="Responsável",
-            font=("Segoe UI", 9),
-            bg=responsible_color_var.get(),
-            fg=self.contrast_text_color(responsible_color_var.get()),
-            padx=10,
-            pady=4,
-        )
-        responsible_preview.pack(side="left")
-
-        tk.Button(
-            responsible_row,
-            text="Escolher cor",
-            command=lambda: self.choose_responsible_color(responsible_color_var, responsible_preview),
-            font=("Segoe UI", 10),
-            relief="flat",
-            bg=SECONDARY_BUTTON_BG,
-            fg=SECONDARY_BUTTON_FG,
-            activebackground=SECONDARY_BUTTON_HOVER,
-            padx=12,
-            pady=8,
-            cursor="hand2",
-        ).pack(side="left", padx=(10, 0))
-
         footer = tk.Frame(window, bg="#eef3f8")
         footer.pack(fill="x", padx=24, pady=(0, 24))
 
         tk.Button(
             footer,
             text="Salvar",
-            command=lambda: self.save_settings(window, file_path_var.get(), layout_var.get(), responsible_color_var.get()),
+            command=lambda: self.save_settings(window, file_path_var.get(), layout_var.get()),
             font=("Segoe UI Semibold", 10),
             relief="flat",
             bg=PRIMARY_BUTTON_BG,
@@ -3526,19 +3777,7 @@ class TaskManagerApp:
         if selected:
             file_path_var.set(selected)
 
-    def choose_responsible_color(self, color_var: tk.StringVar, preview: tk.Label) -> None:
-        chosen = colorchooser.askcolor(color=color_var.get(), parent=self.root, title="Escolher cor do responsável")[1]
-        if not chosen:
-            return
-
-        normalized = self.normalize_color(chosen)
-        color_var.set(normalized)
-        preview.configure(
-            bg=normalized,
-            fg=self.contrast_text_color(normalized),
-        )
-
-    def save_settings(self, window: tk.Toplevel, file_path: str, layout_label: str, responsible_color: str) -> None:
+    def save_settings(self, window: tk.Toplevel, file_path: str, layout_label: str) -> None:
         cleaned_path = file_path.strip()
         if not cleaned_path:
             messagebox.showerror("Configurações", "Escolha um arquivo válido.")
@@ -3574,6 +3813,7 @@ class TaskManagerApp:
             self.settings.set_tasks_path(str(new_file))
             self.file_title = self.default_file_title()
             self.tasks = []
+            self.role_config = self.default_role_config()
             self.tag_catalog = {}
             self.link_catalog = []
             self.compiled_link_rules = None
@@ -3582,6 +3822,7 @@ class TaskManagerApp:
             self.tasks_file = new_file
             self.settings.set_tasks_path(str(new_file))
             self.file_title = self.load_file_title()
+            self.role_config = self.load_role_config()
             self.tag_catalog = self.load_tag_catalog()
             self.link_catalog = self.load_link_catalog()
             self.compiled_link_rules = None
@@ -3591,8 +3832,6 @@ class TaskManagerApp:
 
         self.layout_mode = "compact" if layout_label == "Compacto" else "normal"
         self.settings.set_layout_mode(self.layout_mode)
-        self.responsible_color = self.normalize_color(responsible_color)
-        self.settings.set_responsible_color(self.responsible_color)
         self.storage_status_var.set(self.storage_status_text())
         self.update_window_title()
         self.render_header_title()
@@ -3651,6 +3890,285 @@ class TaskManagerApp:
             pady=8,
             cursor="hand2",
         ).pack(anchor="e", padx=16, pady=(0, 18))
+
+    def open_role_manager(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Gerenciar papéis")
+        window.geometry("840x520")
+        window.minsize(800, 500)
+        window.configure(bg="#eef3f8")
+        window.transient(self.root)
+        window.grab_set()
+        self.center_window(window)
+
+        tk.Label(
+            window,
+            text="Gerenciar papéis",
+            font=("Segoe UI Semibold", 18),
+            bg="#eef3f8",
+            fg="#0f172a",
+        ).pack(anchor="w", padx=24, pady=(20, 8))
+
+        tk.Label(
+            window,
+            text="Defina as cores de Contato e Designado para este arquivo de tarefas.",
+            font=("Segoe UI", 10),
+            bg="#eef3f8",
+            fg="#475569",
+        ).pack(anchor="w", padx=24)
+
+        panel = tk.Frame(window, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
+        panel.pack(fill="both", expand=True, padx=24, pady=(16, 12))
+        panel.grid_columnconfigure(0, weight=1)
+        panel.grid_columnconfigure(1, weight=1)
+
+        contact_config = self.role_definition("contact")
+        assignee_config = self.role_definition("assignee")
+
+        contact_vars = {
+            "color": tk.StringVar(value=contact_config["color"]),
+            "style": tk.StringVar(value=self.role_style_display(contact_config["style"])),
+            "prefix": tk.StringVar(value=contact_config["prefix"]),
+            "font": tk.StringVar(value=contact_config["font"]),
+        }
+        assignee_vars = {
+            "color": tk.StringVar(value=assignee_config["color"]),
+            "style": tk.StringVar(value=self.role_style_display(assignee_config["style"])),
+            "prefix": tk.StringVar(value=assignee_config["prefix"]),
+            "font": tk.StringVar(value=assignee_config["font"]),
+        }
+
+        self.build_role_editor_section(panel, "assignee", "Designado", assignee_vars, column=0)
+        self.build_role_editor_section(panel, "contact", "Contato", contact_vars, column=1)
+
+        footer = tk.Frame(window, bg="#eef3f8")
+        footer.pack(fill="x", padx=24, pady=(0, 28))
+
+        tk.Button(
+            footer,
+            text="Salvar",
+            command=lambda: self.save_role_manager(window, contact_vars, assignee_vars),
+            font=("Segoe UI Semibold", 10),
+            relief="flat",
+            bg=PRIMARY_BUTTON_BG,
+            fg="white",
+            activebackground=PRIMARY_BUTTON_HOVER,
+            activeforeground="white",
+            padx=14,
+            pady=9,
+            cursor="hand2",
+        ).pack(side="right")
+
+        tk.Button(
+            footer,
+            text="Cancelar",
+            command=window.destroy,
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=14,
+            pady=9,
+            cursor="hand2",
+        ).pack(side="right", padx=(0, 10))
+
+    def build_role_editor_section(
+        self,
+        parent: tk.Widget,
+        role_key: str,
+        label: str,
+        role_vars: dict[str, tk.StringVar],
+        column: int,
+    ) -> None:
+        card = tk.Frame(
+            parent,
+            bg="white",
+            highlightthickness=1,
+            highlightbackground="#dbe3ec",
+            padx=16,
+            pady=16,
+        )
+        card.grid(row=0, column=column, sticky="nsew", padx=(16 if column == 0 else 8, 8 if column == 0 else 16), pady=16)
+        card.grid_columnconfigure(0, weight=1)
+        card.grid_columnconfigure(1, weight=1)
+
+        tk.Label(
+            card,
+            text=label,
+            font=("Segoe UI Semibold", 11),
+            bg="white",
+            fg="#0f172a",
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+
+        tk.Label(
+            card,
+            text="Prévia",
+            font=("Segoe UI", 8),
+            bg="white",
+            fg="#64748b",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(12, 4))
+
+        preview_row = tk.Frame(card, bg="white")
+        preview_row.grid_columnconfigure(0, weight=1)
+        preview_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 18))
+        preview_host = tk.Frame(
+            preview_row,
+            bg="#f8fbff",
+            width=190,
+            height=42,
+            highlightthickness=1,
+            highlightbackground="#e2e8f0",
+        )
+        preview_host.grid(row=0, column=0, sticky="w", padx=(0, 12))
+        preview_host.grid_propagate(False)
+
+        self.render_role_preview(preview_host, role_key, label, role_vars)
+
+        tk.Button(
+            preview_row,
+            text="Escolher cor",
+            command=lambda: self.choose_role_color(role_key, label, role_vars, preview_host),
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=12,
+            pady=8,
+            cursor="hand2",
+        ).grid(row=0, column=1, sticky="e")
+
+        controls_labels = tk.Frame(card, bg="white")
+        controls_labels.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        controls_labels.grid_columnconfigure(0, weight=1)
+        controls_labels.grid_columnconfigure(1, weight=1)
+
+        tk.Label(
+            controls_labels,
+            text="Estilo",
+            font=("Segoe UI", 8),
+            bg="white",
+            fg="#64748b",
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        style_menu = tk.OptionMenu(
+            card,
+            role_vars["style"],
+            "Balão",
+            "Tag",
+            command=lambda _value: self.render_role_preview(preview_host, role_key, label, role_vars),
+        )
+        style_menu.config(
+            font=("Segoe UI", 9),
+            relief="flat",
+            bg="white",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            activebackground="white",
+            width=8,
+            anchor="w",
+        )
+        style_menu["menu"].config(font=("Segoe UI", 9))
+        style_menu.grid(row=4, column=0, sticky="ew", padx=(0, 8))
+
+        tk.Label(
+            controls_labels,
+            text="Prefixo",
+            font=("Segoe UI", 8),
+            bg="white",
+            fg="#64748b",
+        ).grid(row=0, column=1, sticky="w")
+        prefix_entry = tk.Entry(
+            card,
+            textvariable=role_vars["prefix"],
+            font=("Segoe UI", 9),
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground="#cbd5e1",
+            highlightcolor="#2563eb",
+            width=8,
+        )
+        prefix_entry.grid(row=4, column=1, sticky="ew", ipady=5)
+        prefix_entry.bind("<KeyRelease>", lambda _event: self.render_role_preview(preview_host, role_key, label, role_vars))
+
+        tk.Label(
+            card,
+            text="Fonte",
+            font=("Segoe UI", 8),
+            bg="white",
+            fg="#64748b",
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(14, 4))
+
+        font_entry = ttk.Combobox(
+            card,
+            textvariable=role_vars["font"],
+            font=("Segoe UI", 9),
+            state="normal",
+            values=("Segoe UI", "Arial", "Calibri", "Verdana", "Tahoma", "Trebuchet MS", "Consolas", "Courier New"),
+        )
+        font_entry.grid(row=6, column=0, columnspan=2, sticky="ew", ipady=4)
+        font_entry.bind("<<ComboboxSelected>>", lambda _event: self.render_role_preview(preview_host, role_key, label, role_vars))
+        font_entry.bind("<KeyRelease>", lambda _event: self.render_role_preview(preview_host, role_key, label, role_vars))
+
+    def render_role_preview(self, host: tk.Widget, role_key: str, label: str, role_vars: dict[str, tk.StringVar]) -> None:
+        for child in host.winfo_children():
+            child.destroy()
+        current_role = self.role_definition(role_key)
+        preview = self.create_role_chip(
+            host,
+            label,
+            {"tag_font": ("Segoe UI", 9), "tag_padx": 8, "tag_pady": 2},
+            self.normalize_hex_color(role_vars["color"].get(), current_role["color"]),
+            self.normalize_role_prefix(role_vars["prefix"].get(), ""),
+            style=self.normalize_role_style(role_vars["style"].get()),
+            font_family=self.normalize_role_font(role_vars["font"].get()),
+        )
+        preview.pack(fill="both", expand=True, anchor="w")
+
+    def choose_role_color(
+        self,
+        role_key: str,
+        role_label: str,
+        role_vars: dict[str, tk.StringVar],
+        preview_host: tk.Widget,
+    ) -> None:
+        current_role = self.role_definition(role_key)
+        chosen = colorchooser.askcolor(
+            color=self.normalize_hex_color(role_vars["color"].get(), current_role["color"]),
+            parent=self.root,
+            title=f"Escolher cor de {role_label.lower()}",
+        )[1]
+        if not chosen:
+            return
+
+        normalized = self.normalize_hex_color(chosen, current_role["color"])
+        role_vars["color"].set(normalized)
+        self.render_role_preview(preview_host, role_key, role_label, role_vars)
+
+    def save_role_manager(
+        self,
+        window: tk.Toplevel,
+        contact_vars: dict[str, tk.StringVar],
+        assignee_vars: dict[str, tk.StringVar],
+    ) -> None:
+        defaults = self.default_role_config()
+        self.role_config = {
+            "contact": {
+                "color": self.normalize_hex_color(contact_vars["color"].get(), defaults["contact"]["color"]),
+                "style": self.normalize_role_style(contact_vars["style"].get(), defaults["contact"]["style"]),
+                "prefix": self.normalize_role_prefix(contact_vars["prefix"].get(), defaults["contact"]["prefix"]),
+                "font": self.normalize_role_font(contact_vars["font"].get(), defaults["contact"]["font"]),
+            },
+            "assignee": {
+                "color": self.normalize_hex_color(assignee_vars["color"].get(), defaults["assignee"]["color"]),
+                "style": self.normalize_role_style(assignee_vars["style"].get(), defaults["assignee"]["style"]),
+                "prefix": self.normalize_role_prefix(assignee_vars["prefix"].get(), defaults["assignee"]["prefix"]),
+                "font": self.normalize_role_font(assignee_vars["font"].get(), defaults["assignee"]["font"]),
+            },
+        }
+        self.save_role_config()
+        self.render_tasks(preserve_scroll=True)
+        window.destroy()
 
     def open_tag_manager(self, on_close=None) -> None:
         window = tk.Toplevel(self.root)
@@ -4659,13 +5177,40 @@ class TaskManagerApp:
                 pill.bind("<Button-1>", lambda _event, tid=task.id: self.edit_task_tags(tid))
                 pill.bind("<Button-3>", lambda event, value=tag: self.show_tag_chip_context_menu(event, value))
 
-        if task.responsible:
-            responsible_pill = self.create_responsible_chip(title_line, task.responsible, metrics)
-            responsible_pill.pack(side="left", padx=metrics["tag_pack_padx"])
-            responsible_pill.bind("<Button-1>", lambda _event, tid=task.id: self.set_task_responsible(tid))
-            responsible_pill.bind(
+        if task.assignee:
+            assignee_role = self.role_definition("assignee")
+            assignee_pill = self.create_role_chip(
+                title_line,
+                task.assignee,
+                metrics,
+                assignee_role["color"],
+                assignee_role["prefix"],
+                style=assignee_role["style"],
+                font_family=assignee_role["font"],
+            )
+            assignee_pill.pack(side="left", padx=metrics["tag_pack_padx"])
+            assignee_pill.bind("<Button-1>", lambda _event, tid=task.id: self.set_task_assignee(tid))
+            assignee_pill.bind(
                 "<Button-3>",
-                lambda event, value=task.responsible: self.show_responsible_chip_context_menu(event, value),
+                lambda event, value=task.assignee: self.show_assignee_chip_context_menu(event, value),
+            )
+
+        if task.contact:
+            contact_role = self.role_definition("contact")
+            contact_pill = self.create_role_chip(
+                title_line,
+                task.contact,
+                metrics,
+                contact_role["color"],
+                contact_role["prefix"],
+                style=contact_role["style"],
+                font_family=contact_role["font"],
+            )
+            contact_pill.pack(side="left", padx=metrics["tag_pack_padx"])
+            contact_pill.bind("<Button-1>", lambda _event, tid=task.id: self.set_task_contact(tid))
+            contact_pill.bind(
+                "<Button-3>",
+                lambda event, value=task.contact: self.show_contact_chip_context_menu(event, value),
             )
 
         if self.editing_task_id == task.id:
@@ -4838,6 +5383,7 @@ class TaskManagerApp:
         if (
             self.tag_filter_var.get() != "Todas"
             or self.responsible_filter_var.get() != "Todos"
+            or self.assignee_filter_var.get() != "Todos"
             or self.important_filter_var.get() != "Todas"
         ):
             # Reordering a filtered subset is misleading because hidden rows in

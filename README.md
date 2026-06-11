@@ -8,13 +8,20 @@ App desktop para Windows, feito em Python + Tkinter, voltado para gerenciamento 
 - Reordenação manual de tarefas por drag-and-drop
 - Seções manuais para agrupamento visual
 - Marcação de tarefa importante
-- Responsável por tarefa
+- Contato por tarefa
+- Designado por tarefa
 - Data de previsão por tarefa
 - Tags com cor personalizada
 - Gerenciador de tags com ordenação manual
+- Gerenciador de papéis com:
+  - cor
+  - estilo
+  - prefixo
+  - fonte
 - Links automáticos em títulos de tarefas por regex
 - Filtros por:
-  - responsável
+  - contato
+  - designado
   - importância
   - tag
 - Botão para limpar filtros
@@ -90,9 +97,10 @@ Pela tela `Configurações`, é possível:
 
 - escolher o arquivo JSON onde as tarefas serão armazenadas
 - alternar o layout da lista
-- escolher a cor usada no chip de responsável
-- abrir o gerenciador de tags
-- abrir o gerenciador de links automáticos
+
+As telas `Gerenciar tags`, `Gerenciar papéis` e `Gerenciar links` ficam disponíveis diretamente na barra lateral.
+
+Os papéis `Contato` e `Designado` são configurados na tela `Gerenciar papéis` e ficam salvos no próprio arquivo de tarefas, incluindo cor, estilo, prefixo e fonte.
 
 ## Build portable
 
@@ -108,6 +116,7 @@ Saída esperada:
 - A reordenação da lista principal funciona apenas com os filtros limpos.
 - O botão `Recarregar` relê o arquivo configurado no disco.
 - Tags são específicas do arquivo de tarefas atual.
+- As cores de `Contato` e `Designado` também são específicas do arquivo atual.
 - Links automáticos são específicos do arquivo de tarefas atual.
 - O arquivo de dados pode ficar em qualquer pasta acessível ao usuário, incluindo pastas sincronizadas pelo OneDrive.
 
