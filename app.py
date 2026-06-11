@@ -53,6 +53,33 @@ TOOLBOX_BUTTON_HOVER = "#3C6283"
 CHECKBOX_UNCHECKED = "☐"
 CHECKBOX_CHECKED = "☒"
 LEGACY_CHECKBOX_CHECKED = "☑"
+TASK_ROW_TOKEN_TAGS = "tags"
+TASK_ROW_TOKEN_ASSIGNEE = "assignee"
+TASK_ROW_TOKEN_CONTACT = "contact"
+TASK_ROW_TOKEN_TITLE = "title"
+TASK_ROW_TOKEN_DATE = "date"
+TASK_ROW_TOKEN_NOTES = "notes"
+TASK_ROW_TOKEN_SPACER = "spacer"
+TASK_ROW_TOKEN_ACTIONS = "actions"
+TASK_ROW_ORDER_TOKENS = (
+    TASK_ROW_TOKEN_TAGS,
+    TASK_ROW_TOKEN_ASSIGNEE,
+    TASK_ROW_TOKEN_CONTACT,
+    TASK_ROW_TOKEN_TITLE,
+    TASK_ROW_TOKEN_DATE,
+    TASK_ROW_TOKEN_NOTES,
+    TASK_ROW_TOKEN_SPACER,
+    TASK_ROW_TOKEN_ACTIONS,
+)
+TASK_ROW_ORDER_CONFIGURABLE_TOKENS = (
+    TASK_ROW_TOKEN_TAGS,
+    TASK_ROW_TOKEN_ASSIGNEE,
+    TASK_ROW_TOKEN_CONTACT,
+    TASK_ROW_TOKEN_TITLE,
+    TASK_ROW_TOKEN_DATE,
+    TASK_ROW_TOKEN_NOTES,
+    TASK_ROW_TOKEN_SPACER,
+)
 
 # Notes are stored as lightweight HTML, then rebuilt into tk.Text tag ranges
 # so the editor can keep using native Tk formatting without a custom model.
@@ -273,6 +300,7 @@ class TaskManagerApp:
         self.role_config = self.load_role_config()
         self.tag_catalog = self.load_tag_catalog()
         self.link_catalog = self.load_link_catalog()
+        self.task_row_order = self.load_task_row_order()
         self.compiled_link_rules: list[tuple[dict[str, Any], re.Pattern[str]]] | None = None
         self.tasks: list[Task] = self.load_tasks()
         # Older files may know about tags only through tasks, while newer files
@@ -1101,6 +1129,58 @@ class TaskManagerApp:
     def size_display_value(self, value: Any) -> str:
         normalized = self.normalize_optional_size(value)
         return str(normalized) if normalized is not None else ""
+
+    def default_task_row_order(self) -> list[str]:
+        return [
+            TASK_ROW_TOKEN_TAGS,
+            TASK_ROW_TOKEN_ASSIGNEE,
+            TASK_ROW_TOKEN_CONTACT,
+            TASK_ROW_TOKEN_TITLE,
+            TASK_ROW_TOKEN_NOTES,
+            TASK_ROW_TOKEN_SPACER,
+            TASK_ROW_TOKEN_DATE,
+        ]
+
+    def normalize_task_row_order(self, value: Any) -> list[str]:
+        normalized: list[str] = []
+        if isinstance(value, list):
+            for item in value:
+                token = str(item).strip().lower()
+                if token not in TASK_ROW_ORDER_CONFIGURABLE_TOKENS or token in normalized:
+                    continue
+                normalized.append(token)
+        return normalized
+
+    def row_order_label(self, token: str) -> str:
+        labels = {
+            TASK_ROW_TOKEN_TAGS: "Tags",
+            TASK_ROW_TOKEN_ASSIGNEE: "Designado",
+            TASK_ROW_TOKEN_CONTACT: "Contato",
+            TASK_ROW_TOKEN_TITLE: "Título",
+            TASK_ROW_TOKEN_DATE: "Data",
+            TASK_ROW_TOKEN_NOTES: "Nota",
+            TASK_ROW_TOKEN_SPACER: "Espaço",
+            TASK_ROW_TOKEN_ACTIONS: "Ações",
+        }
+        return labels.get(token, token.title())
+
+    def load_task_row_order(self) -> list[str]:
+        default_order = self.default_task_row_order()
+        if not self.tasks_file.exists():
+            return default_order
+
+        try:
+            raw_data = json.loads(self.tasks_file.read_text(encoding="utf-8"))
+            if not isinstance(raw_data, dict):
+                return default_order
+            if "task_row_order" not in raw_data or not isinstance(raw_data.get("task_row_order"), list):
+                return default_order
+            return self.normalize_task_row_order(raw_data.get("task_row_order"))
+        except json.JSONDecodeError:
+            return default_order
+
+    def save_task_row_order(self) -> None:
+        self.save_tasks()
 
     def role_definition(self, role_key: str) -> dict[str, str]:
         defaults = self.default_role_config()
@@ -2481,6 +2561,7 @@ class TaskManagerApp:
         payload = {
             "title": self.file_title.strip() or self.default_file_title(),
             "tasks": [asdict(task) for task in current],
+            "task_row_order": list(self.task_row_order),
             "role_config": {
                 role_key: self.role_definition(role_key)
                 for role_key in ("contact", "assignee")
@@ -2509,6 +2590,10 @@ class TaskManagerApp:
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    # Normaliza a ordem visual da linha para montar cada tarefa com fallback seguro.
+    def active_task_row_order(self) -> list[str]:
+        return list(self.task_row_order) if isinstance(self.task_row_order, list) else self.default_task_row_order()
 
     # Sincronização dos filtros e coleta de valores disponíveis no arquivo atual.
     def refresh_filter_options(self) -> bool:
@@ -3668,7 +3753,9 @@ class TaskManagerApp:
     def reload_tasks_from_disk(self) -> None:
         self.role_config = self.load_role_config()
         self.tasks = self.load_tasks()
+        self.tag_catalog = self.load_tag_catalog()
         self.link_catalog = self.load_link_catalog()
+        self.task_row_order = self.load_task_row_order()
         self.compiled_link_rules = None
         self.sync_tag_catalog_with_tasks()
         self.normalize_task_tags()
@@ -3679,8 +3766,8 @@ class TaskManagerApp:
     def open_settings_window(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Configurações")
-        window.geometry("680x370")
-        window.minsize(620, 350)
+        window.geometry("680x460")
+        window.minsize(620, 430)
         window.configure(bg="#eef3f8")
         window.transient(self.root)
         window.grab_set()
@@ -3769,6 +3856,39 @@ class TaskManagerApp:
             cursor="hand2",
         ).pack(side="left", padx=(16, 0))
 
+        tk.Label(
+            panel,
+            text="Linha da tarefa",
+            font=("Segoe UI Semibold", 10),
+            bg="white",
+            fg="#0f172a",
+        ).pack(anchor="w", padx=16, pady=(4, 8))
+
+        task_row_panel = tk.Frame(panel, bg="white")
+        task_row_panel.pack(fill="x", padx=16, pady=(0, 16))
+
+        tk.Label(
+            task_row_panel,
+            text="Defina a ordem dos elementos visuais do arquivo atual.",
+            font=("Segoe UI", 10),
+            bg="white",
+            fg="#475569",
+        ).pack(side="left")
+
+        tk.Button(
+            task_row_panel,
+            text="Organizar linha",
+            command=self.open_task_row_order_window,
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=12,
+            pady=8,
+            cursor="hand2",
+        ).pack(side="right")
+
         footer = tk.Frame(window, bg="#eef3f8")
         footer.pack(fill="x", padx=24, pady=(0, 24))
 
@@ -3802,6 +3922,153 @@ class TaskManagerApp:
         ).pack(side="right", padx=(0, 10))
 
     # Configurações gerais, tela Sobre e gerenciador de tags.
+    def open_task_row_order_window(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Organizar linha da tarefa")
+        window.geometry("520x520")
+        window.minsize(480, 480)
+        window.configure(bg="#eef3f8")
+        window.transient(self.root)
+        window.grab_set()
+        self.center_window(window)
+
+        tk.Label(
+            window,
+            text="Organizar linha da tarefa",
+            font=("Segoe UI Semibold", 18),
+            bg="#eef3f8",
+            fg="#0f172a",
+        ).pack(anchor="w", padx=24, pady=(20, 8))
+
+        tk.Label(
+            window,
+            text="Ative os itens desejados e ajuste a ordem de exibição no arquivo atual.",
+            font=("Segoe UI", 10),
+            bg="#eef3f8",
+            fg="#475569",
+        ).pack(anchor="w", padx=24)
+
+        tk.Label(
+            window,
+            text="Importância continua fixa à esquerda e o botão de fechar continua no fim da linha.",
+            font=("Segoe UI", 9),
+            bg="#eef3f8",
+            fg="#64748b",
+        ).pack(anchor="w", padx=24, pady=(4, 0))
+
+        panel = tk.Frame(window, bg="white", highlightthickness=1, highlightbackground="#dbe3ec")
+        panel.pack(fill="both", expand=True, padx=24, pady=(16, 12))
+
+        working_order = list(self.task_row_order)
+        for token in TASK_ROW_ORDER_CONFIGURABLE_TOKENS:
+            if token not in working_order:
+                working_order.append(token)
+        enabled = {token: token in self.task_row_order for token in TASK_ROW_ORDER_CONFIGURABLE_TOKENS}
+
+        list_body = tk.Frame(panel, bg="white")
+        list_body.pack(fill="both", expand=True, padx=16, pady=16)
+
+        def move_token(token: str, direction: int) -> None:
+            current_index = working_order.index(token)
+            target_index = current_index + direction
+            if target_index < 0 or target_index >= len(working_order):
+                return
+            working_order[current_index], working_order[target_index] = working_order[target_index], working_order[current_index]
+            refresh_rows()
+
+        def refresh_rows() -> None:
+            for child in list_body.winfo_children():
+                child.destroy()
+
+            for index, token in enumerate(working_order):
+                row = tk.Frame(list_body, bg="white")
+                row.pack(fill="x", pady=4)
+
+                token_var = tk.BooleanVar(value=enabled[token])
+
+                def toggle_token(key: str = token, var: tk.BooleanVar = token_var) -> None:
+                    enabled[key] = var.get()
+
+                tk.Checkbutton(
+                    row,
+                    text=self.row_order_label(token),
+                    variable=token_var,
+                    command=toggle_token,
+                    font=("Segoe UI", 10),
+                    bg="white",
+                    activebackground="white",
+                    cursor="hand2",
+                ).pack(side="left")
+
+                tk.Button(
+                    row,
+                    text="▲",
+                    command=lambda key=token: move_token(key, -1),
+                    font=("Segoe UI", 8),
+                    relief="flat",
+                    bg=SECONDARY_BUTTON_BG,
+                    fg=SECONDARY_BUTTON_FG,
+                    activebackground=SECONDARY_BUTTON_HOVER,
+                    width=3,
+                    cursor="hand2",
+                    state="normal" if index > 0 else "disabled",
+                ).pack(side="right")
+
+                tk.Button(
+                    row,
+                    text="▼",
+                    command=lambda key=token: move_token(key, 1),
+                    font=("Segoe UI", 8),
+                    relief="flat",
+                    bg=SECONDARY_BUTTON_BG,
+                    fg=SECONDARY_BUTTON_FG,
+                    activebackground=SECONDARY_BUTTON_HOVER,
+                    width=3,
+                    cursor="hand2",
+                    state="normal" if index < len(working_order) - 1 else "disabled",
+                ).pack(side="right", padx=(0, 6))
+
+        def save_order() -> None:
+            selected_order = [token for token in working_order if enabled[token]]
+            self.task_row_order = selected_order
+            self.save_task_row_order()
+            self.render_tasks(preserve_scroll=True)
+            window.destroy()
+
+        refresh_rows()
+
+        footer = tk.Frame(window, bg="#eef3f8")
+        footer.pack(fill="x", padx=24, pady=(0, 24))
+
+        tk.Button(
+            footer,
+            text="Salvar",
+            command=save_order,
+            font=("Segoe UI Semibold", 10),
+            relief="flat",
+            bg=PRIMARY_BUTTON_BG,
+            fg="white",
+            activebackground=PRIMARY_BUTTON_HOVER,
+            activeforeground="white",
+            padx=14,
+            pady=9,
+            cursor="hand2",
+        ).pack(side="right")
+
+        tk.Button(
+            footer,
+            text="Cancelar",
+            command=window.destroy,
+            font=("Segoe UI", 10),
+            relief="flat",
+            bg=SECONDARY_BUTTON_BG,
+            fg=SECONDARY_BUTTON_FG,
+            activebackground=SECONDARY_BUTTON_HOVER,
+            padx=14,
+            pady=9,
+            cursor="hand2",
+        ).pack(side="right", padx=(0, 10))
+
     def choose_tasks_file(self, file_path_var: tk.StringVar) -> None:
         current_path = Path(file_path_var.get()).expanduser() if file_path_var.get().strip() else self.tasks_file
         initial_dir = str(current_path.parent if current_path.parent.exists() else APP_DIR)
@@ -3856,6 +4123,7 @@ class TaskManagerApp:
             self.role_config = self.default_role_config()
             self.tag_catalog = {}
             self.link_catalog = []
+            self.task_row_order = self.default_task_row_order()
             self.compiled_link_rules = None
             self.save_tasks([])
         else:
@@ -3865,6 +4133,7 @@ class TaskManagerApp:
             self.role_config = self.load_role_config()
             self.tag_catalog = self.load_tag_catalog()
             self.link_catalog = self.load_link_catalog()
+            self.task_row_order = self.load_task_row_order()
             self.compiled_link_rules = None
             self.tasks = self.load_tasks()
             self.sync_tag_catalog_with_tasks()
@@ -5268,22 +5537,6 @@ class TaskManagerApp:
             bd=0,
         ).pack(side="left", padx=(metrics["action_pack_padx"], 8))
 
-        if task.due_date:
-            due_date_label = tk.Label(
-                row_body,
-                text=self.format_due_date(task.due_date),
-                font=("Segoe UI", 9 if self.layout_mode == "compact" else 10),
-                fg=self.due_date_text_color(task.due_date),
-                bg=row_bg,
-                cursor="hand2",
-                width=10,
-                anchor="e",
-                justify="right",
-                padx=8,
-            )
-            due_date_label.pack(side="right", padx=(8, 6))
-            due_date_label.bind("<Button-1>", lambda _event, tid=task.id: self.open_due_date_dialog(tid))
-
         content = tk.Frame(row_body, bg=row_bg)
         content.pack(side="left", fill="x", expand=True, padx=metrics["content_padx"])
 
@@ -5296,9 +5549,11 @@ class TaskManagerApp:
         )
         title_font.configure(overstrike=1 if task.completed else 0)
         title_color = "#94a3b8" if task.completed else "#0f172a"
+        active_tokens = self.active_task_row_order()
+        title_should_expand = TASK_ROW_TOKEN_SPACER not in active_tokens
 
-        ordered_tags = self.ordered_task_tags(task.tags)
-        if ordered_tags:
+        def render_tags_token() -> None:
+            ordered_tags = self.ordered_task_tags(task.tags)
             for tag in ordered_tags:
                 color = self.get_tag_color(tag)
                 pill = tk.Label(
@@ -5318,7 +5573,9 @@ class TaskManagerApp:
                 pill.bind("<Button-1>", lambda _event, tid=task.id: self.edit_task_tags(tid))
                 pill.bind("<Button-3>", lambda event, value=tag: self.show_tag_chip_context_menu(event, value))
 
-        if task.assignee:
+        def render_assignee_token() -> None:
+            if not task.assignee:
+                return
             assignee_role = self.role_definition("assignee")
             assignee_pill = self.create_role_chip(
                 title_line,
@@ -5337,7 +5594,9 @@ class TaskManagerApp:
                 lambda event, value=task.assignee: self.show_assignee_chip_context_menu(event, value),
             )
 
-        if task.contact:
+        def render_contact_token() -> None:
+            if not task.contact:
+                return
             contact_role = self.role_definition("contact")
             contact_pill = self.create_role_chip(
                 title_line,
@@ -5356,43 +5615,92 @@ class TaskManagerApp:
                 lambda event, value=task.contact: self.show_contact_chip_context_menu(event, value),
             )
 
-        if self.editing_task_id == task.id:
-            edit_var = tk.StringVar(value=task.title)
-            title_entry = tk.Entry(
-                title_line,
-                textvariable=edit_var,
-                font=metrics["title_entry_font"],
-                relief="flat",
-                highlightthickness=1,
-                highlightbackground="#93c5fd",
-                highlightcolor="#2563eb",
+        def render_title_token() -> None:
+            title_host = tk.Frame(title_line, bg=row_bg)
+            title_host.pack(
+                side="left",
+                fill="x" if title_should_expand else "none",
+                expand=title_should_expand,
+                padx=(6, 0),
             )
-            self.inline_title_var = edit_var
-            self.inline_title_entry = title_entry
-            title_entry.pack(side="left", fill="x", expand=True, ipady=metrics["title_entry_ipady"])
-            title_entry.bind(
-                "<Return>",
-                lambda _event, tid=task.id, var=edit_var: self.save_inline_task_title(tid, var.get()),
-            )
-            title_entry.bind("<Escape>", lambda _event: self.cancel_inline_task_title())
-            title_entry.bind(
-                "<FocusOut>",
-                lambda _event, tid=task.id, var=edit_var: self.save_inline_task_title(tid, var.get()),
-            )
-            title_entry.focus_set()
-            title_entry.select_range(0, "end")
-        else:
+            if self.editing_task_id == task.id:
+                edit_var = tk.StringVar(value=task.title)
+                title_entry = tk.Entry(
+                    title_host,
+                    textvariable=edit_var,
+                    font=metrics["title_entry_font"],
+                    relief="flat",
+                    highlightthickness=1,
+                    highlightbackground="#93c5fd",
+                    highlightcolor="#2563eb",
+                )
+                self.inline_title_var = edit_var
+                self.inline_title_entry = title_entry
+                title_entry.pack(fill="x", expand=True, ipady=metrics["title_entry_ipady"])
+                title_entry.bind(
+                    "<Return>",
+                    lambda _event, tid=task.id, var=edit_var: self.save_inline_task_title(tid, var.get()),
+                )
+                title_entry.bind("<Escape>", lambda _event: self.cancel_inline_task_title())
+                title_entry.bind(
+                    "<FocusOut>",
+                    lambda _event, tid=task.id, var=edit_var: self.save_inline_task_title(tid, var.get()),
+                )
+                title_entry.focus_set()
+                title_entry.select_range(0, "end")
+                return
+
             self.render_task_title_segments(
-                title_line,
+                title_host,
                 task,
                 title_font,
                 title_color,
                 row_bg,
             )
-            if task.notes.strip():
-                notes_indicator = self.create_notes_badge(title_line, metrics)
-                notes_indicator.pack(side="left", padx=(6, 0))
-                notes_indicator.bind("<Button-1>", lambda _event, tid=task.id: self.open_notes_dialog(tid))
+
+        def render_notes_token() -> None:
+            if not task.notes.strip():
+                return
+            notes_host = tk.Frame(title_line, bg=row_bg, width=22, height=18)
+            notes_host.pack(side="left", padx=4)
+            notes_host.pack_propagate(False)
+            notes_indicator = self.create_notes_badge(notes_host, metrics)
+            notes_indicator.place(relx=0.5, rely=0.5, anchor="center")
+            notes_indicator.bind("<Button-1>", lambda _event, tid=task.id: self.open_notes_dialog(tid))
+
+        def render_spacer_token() -> None:
+            tk.Frame(title_line, bg=row_bg).pack(side="left", fill="x", expand=True)
+
+        def render_date_token() -> None:
+            if not task.due_date:
+                return
+            due_date_label = tk.Label(
+                title_line,
+                text=self.format_due_date(task.due_date),
+                font=("Segoe UI", 9 if self.layout_mode == "compact" else 10),
+                fg=self.due_date_text_color(task.due_date),
+                bg=row_bg,
+                cursor="hand2",
+                anchor="e",
+                justify="right",
+                padx=2,
+            )
+            due_date_label.pack(side="left", padx=(6, 2))
+            due_date_label.bind("<Button-1>", lambda _event, tid=task.id: self.open_due_date_dialog(tid))
+
+        token_renderers = {
+            TASK_ROW_TOKEN_TAGS: render_tags_token,
+            TASK_ROW_TOKEN_ASSIGNEE: render_assignee_token,
+            TASK_ROW_TOKEN_CONTACT: render_contact_token,
+            TASK_ROW_TOKEN_TITLE: render_title_token,
+            TASK_ROW_TOKEN_NOTES: render_notes_token,
+            TASK_ROW_TOKEN_SPACER: render_spacer_token,
+            TASK_ROW_TOKEN_DATE: render_date_token,
+        }
+        for token in active_tokens:
+            renderer = token_renderers.get(token)
+            if renderer:
+                renderer()
 
         self.bind_task_context_menu(row, task.id)
 

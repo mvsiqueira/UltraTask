@@ -77,6 +77,7 @@ Observação:
 - Checklist dentro do campo de notas
 - Build timestamp visível no app e compatível com versão portable
 - Tags e papéis com largura fixa opcional por item
+- Ordem configurável dos elementos da linha da tarefa por arquivo
 
 ## Notas sobre papéis
 
@@ -91,6 +92,21 @@ Observação:
   - tamanho opcional em caracteres para largura fixa
 - A configuração dos papéis é salva no próprio arquivo de tarefas.
 - Essa configuração não fica em `settings.json`.
+
+## Notas sobre ordem da linha da tarefa
+
+- A ordem visual da linha é salva no próprio arquivo de tarefas.
+- Os tokens atualmente configuráveis são:
+  - `tags`
+  - `assignee`
+  - `contact`
+  - `title`
+  - `date`
+  - `notes`
+  - `spacer`
+- O marcador de importância continua fixo à esquerda.
+- O botão de fechar continua fixo no fim da linha.
+- Cada token pode aparecer no máximo uma vez e também pode ser omitido.
 
 ## Notas sobre tags
 

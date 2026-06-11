@@ -19,6 +19,7 @@ App desktop para Windows, feito em Python + Tkinter, voltado para gerenciamento 
   - prefixo
   - fonte
   - tamanho fixo opcional
+- Ordem configurável dos elementos visuais na linha da tarefa
 - Links automáticos em títulos de tarefas por regex
 - Filtros por:
   - contato
@@ -98,10 +99,12 @@ Pela tela `Configurações`, é possível:
 
 - escolher o arquivo JSON onde as tarefas serão armazenadas
 - alternar o layout da lista
+- abrir a configuração da ordem visual da linha da tarefa para o arquivo atual
 
 As telas `Gerenciar tags`, `Gerenciar papéis` e `Gerenciar links` ficam disponíveis diretamente na barra lateral.
 
 Os papéis `Contato` e `Designado` são configurados na tela `Gerenciar papéis` e ficam salvos no próprio arquivo de tarefas, incluindo cor, estilo, prefixo, fonte e tamanho fixo opcional.
+A ordem visual da linha da tarefa também é salva no próprio arquivo de tarefas.
 
 ## Build portable
 
@@ -120,6 +123,7 @@ Saída esperada:
 - Tags também podem ter largura fixa opcional, definida por item no cadastro.
 - As cores de `Contato` e `Designado` também são específicas do arquivo atual.
 - `Contato` e `Designado` também aceitam largura fixa opcional, definida por papel.
+- A linha da tarefa aceita ordenar `Tags`, `Designado`, `Contato`, `Título`, `Data`, `Nota` e `Espaço` por arquivo.
 - Links automáticos são específicos do arquivo de tarefas atual.
 - O arquivo de dados pode ficar em qualquer pasta acessível ao usuário, incluindo pastas sincronizadas pelo OneDrive.
 
